@@ -84,9 +84,7 @@ export async function POST(req: NextRequest) {
       dr.getCell(5).value = parseFloat(row.quantity) || null
       dr.getCell(6).value = row.unit || ''
       dr.getCell(7).value = parseFloat(row.unit_price) || null
-      if (row.unit_price && row.quantity) {
-        dr.getCell(8).value = { formula: \`E\${r}*G\${r}\` }
-      }
+      dr.getCell(8).value = Math.round((parseFloat(row.quantity) || 0) * (parseFloat(row.unit_price) || 0))
       dr.getCell(9).value = note
       dr.getCell(9).alignment = { wrapText: true, vertical: 'top' }
       dr.height = 36
