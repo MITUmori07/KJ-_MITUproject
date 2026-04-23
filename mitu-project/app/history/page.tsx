@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.2'
+const VERSION = 'v0.3.3'
 
 type Estimate = {
   id: number
@@ -43,10 +44,12 @@ type Filters = {
 const t = (str: string | null | undefined, len: number) => (str || '').slice(0, len)
 
 export default function HistoryPage() {
+  const router = useRouter()
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [copying, setCopying] = useState(false)
   const [showTitleList, setShowTitleList] = useState(false)
   const [is880, setIs880] = useState(false)
   const [filters, setFilters] = useState<Filters>({
@@ -88,6 +91,73 @@ export default function HistoryPage() {
   const resetFilters = () => {
     setFilters({ staff: '', building: '', workType: '', year: '' })
     setShowTitleList(false)
+  }
+
+  // コピーして編集
+  const handleCopyToEdit = async () => {
+    if (!selectedEstimate || items.length === 0) return
+    setCopying(true)
+
+    // estimate_itemsをestimate/page.tsxのSection形式に変換
+    const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
+    const sectionNames = [...new Set(normalItems.map(i => i.work_section))]
+
+    const sections = sectionNames.map(name => ({
+      id: Math.random().toString(36).slice(2),
+      name,
+      rows: normalItems
+        .filter(i => i.work_section === name)
+        .map(item => ({
+          id: Math.random().toString(36).slice(2),
+          name1: item.name1 || '',
+          name2: item.name2 || '',
+          name3: item.name3 || '',
+          spec1: item.spec1 || '',
+          spec2: item.spec2 || '',
+          spec3: item.spec3 || '',
+          quantity: String(item.quantity ?? ''),
+          unit: item.unit || '',
+          unit_price: String(item.unit_price ?? ''),
+          amount: item.amount || 0,
+          note1: item.note1 || '',
+          note2: item.note2 || '',
+          note3: item.note3 || '',
+          candidates: [],
+          showCandidates: false,
+          source_estimate_item_id: item.id,
+        }))
+    }))
+
+    // draftsに保存
+    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
+    const { data, error } = await supabase.from('drafts').insert({
+      file_key,
+      date: selectedEstimate.date,
+      building: selectedEstimate.building,
+      title: selectedEstimate.title,
+      staff: selectedEstimate.staff,
+      work_type: selectedEstimate.work_type,
+      sections,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+
+    setCopying(false)
+
+    if (error || !data) {
+      alert('コピーに失敗しました')
+      return
+    }
+
+    // estimate画面へ遷移
+    const params = new URLSearchParams({
+      date: selectedEstimate.date,
+      building: selectedEstimate.building,
+      title: selectedEstimate.title,
+      staff: selectedEstimate.staff,
+      work_type: selectedEstimate.work_type,
+      draft_id: String(data.id),
+    })
+    router.push(`/estimate?${params.toString()}`)
   }
 
   const filteredEstimates = estimates.filter(e => {
@@ -156,27 +226,18 @@ export default function HistoryPage() {
     a.click()
   }
 
-  // 列幅定義（合計100%）
   const colWidths = {
-    no:     '3%',
-    name:   '26%',
-    spec:   '24%',
-    qty:    '6%',
-    unit:   '4%',
-    price:  '10%',
-    amount: '11%',
-    note:   '16%',
+    no: '3%', name: '26%', spec: '24%', qty: '6%',
+    unit: '4%', price: '10%', amount: '11%', note: '16%',
   }
 
   return (
-    // style属性で幅を直接指定（Tailwind動的クラス問題を回避）
     <div style={is880 ? { maxWidth: '880px', margin: '0 auto' } : {}}>
       <main className="min-h-screen bg-gray-50">
 
         {/* 上部固定フィルターバー */}
         <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1">
 
-          {/* バージョン */}
           <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
 
           {/* 件名▼ */}
@@ -244,6 +305,14 @@ export default function HistoryPage() {
             Excel
           </button>
 
+          {/* コピー編集 */}
+          <button
+            onClick={handleCopyToEdit}
+            disabled={copying || !selectedEstimate}
+            className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
+            {copying ? '準備中...' : 'コピー編集'}
+          </button>
+
           {/* 880トグル */}
           <button
             onClick={() => setIs880(!is880)}
@@ -289,14 +358,10 @@ export default function HistoryPage() {
                 const { sectionItems, expenses, subtotal, total } = getSectionData(sectionName)
                 return (
                   <div key={sectionName} className="mb-6">
-
-                    {/* 工事区分ヘッダー（青帯）*/}
                     <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
                       <span className="font-bold text-sm">{sectionName}</span>
                       <span className="text-xs">小計 {fmt(subtotal)} 円</span>
                     </div>
-
-                    {/* 明細テーブル */}
                     <div className="overflow-x-auto">
                       <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
                         <colgroup>
@@ -325,13 +390,11 @@ export default function HistoryPage() {
                           {sectionItems.map(item => (
                             <tr key={item.id} className="border-t align-top">
                               <td className="p-1 text-center">{String(item.row_order).slice(0,2)}</td>
-                              {/* 名称: 12文字・10pt相当 */}
                               <td className="p-1 overflow-hidden">
                                 {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
                                 {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
                                 {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
                               </td>
-                              {/* 仕様: 16文字・9pt相当 */}
                               <td className="p-1 overflow-hidden">
                                 {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
                                 {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
@@ -341,7 +404,6 @@ export default function HistoryPage() {
                               <td className="p-1 text-center">{t(item.unit,2)}</td>
                               <td className="p-1 text-right">{fmt(item.unit_price)}</td>
                               <td className="p-1 text-right">{fmt(item.amount)}</td>
-                              {/* 備考: 7文字・幅狭め */}
                               <td className="p-1 overflow-hidden">
                                 {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
                                 {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
@@ -349,8 +411,6 @@ export default function HistoryPage() {
                               </td>
                             </tr>
                           ))}
-
-                          {/* 経費行 */}
                           {expenses.map(exp => (
                             <tr key={exp.id} className="border-t bg-gray-50 align-top">
                               <td className="p-1"></td>
@@ -366,8 +426,6 @@ export default function HistoryPage() {
                         </tbody>
                       </table>
                     </div>
-
-                    {/* 工事区分合計 */}
                     <div className="bg-gray-200 border border-t-0 px-4 py-1.5 flex justify-between font-bold text-sm">
                       <span>{sectionName}　合計</span>
                       <span>{fmt(total)} 円</span>
@@ -376,7 +434,6 @@ export default function HistoryPage() {
                 )
               })}
 
-              {/* 建築工事の計 */}
               {sectionNames.length > 0 && (
                 <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
                   <span className="text-lg font-bold">建築工事の計</span>
