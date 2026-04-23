@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.4'
+const VERSION = 'v0.3.5'
 
 type Estimate = {
   id: number
@@ -169,8 +169,17 @@ export default function HistoryPage() {
   const workTypes = [...new Set(estimates.map(e => e.work_type))]
   const years = [...new Set(estimates.map(e => e.date.slice(0, 4)))].sort().reverse()
 
+  const SECTION_ORDER = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
   const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
   const sectionNames = [...new Set(normalItems.map(i => i.work_section))]
+    .sort((a, b) => {
+      const ai = SECTION_ORDER.indexOf(a)
+      const bi = SECTION_ORDER.indexOf(b)
+      if (ai === -1 && bi === -1) return a.localeCompare(b)
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
 
   const fmt = (n: number) => Math.round(n).toLocaleString()
 
