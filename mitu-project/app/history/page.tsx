@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.3'
+const VERSION = 'v0.3.4'
 
 type Estimate = {
   id: number
@@ -93,12 +93,10 @@ export default function HistoryPage() {
     setShowTitleList(false)
   }
 
-  // コピーして編集
   const handleCopyToEdit = async () => {
     if (!selectedEstimate || items.length === 0) return
     setCopying(true)
 
-    // estimate_itemsをestimate/page.tsxのSection形式に変換
     const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
     const sectionNames = [...new Set(normalItems.map(i => i.work_section))]
 
@@ -128,13 +126,12 @@ export default function HistoryPage() {
         }))
     }))
 
-    // draftsに保存
     const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
     const { data, error } = await supabase.from('drafts').insert({
       file_key,
-      date: selectedEstimate.date,
+      date: '',
       building: selectedEstimate.building,
-      title: selectedEstimate.title,
+      title: '',
       staff: selectedEstimate.staff,
       work_type: selectedEstimate.work_type,
       sections,
@@ -148,16 +145,15 @@ export default function HistoryPage() {
       return
     }
 
-    // estimate画面へ遷移
+    // トップページへ遷移（mode=copy、ビル名・担当者・工事種別を引き継ぎ）
     const params = new URLSearchParams({
-      date: selectedEstimate.date,
       building: selectedEstimate.building,
-      title: selectedEstimate.title,
       staff: selectedEstimate.staff,
       work_type: selectedEstimate.work_type,
       draft_id: String(data.id),
+      mode: 'copy',
     })
-    router.push(`/estimate?${params.toString()}`)
+    router.push(`/?${params.toString()}`)
   }
 
   const filteredEstimates = estimates.filter(e => {
@@ -234,16 +230,10 @@ export default function HistoryPage() {
   return (
     <div style={is880 ? { maxWidth: '880px', margin: '0 auto' } : {}}>
       <main className="min-h-screen bg-gray-50">
-
-        {/* 上部固定フィルターバー */}
         <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1">
-
           <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
-
-          {/* 件名▼ */}
           <div className="relative">
-            <button
-              onClick={() => setShowTitleList(!showTitleList)}
+            <button onClick={() => setShowTitleList(!showTitleList)}
               className="border border-blue-300 rounded px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 font-medium whitespace-nowrap">
               件名▼
             </button>
@@ -251,8 +241,7 @@ export default function HistoryPage() {
               <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-30 min-w-[300px] max-h-[60vh] overflow-y-auto">
                 {filteredEstimates.map((e, i) => (
                   <div key={e.id}>
-                    <div
-                      onClick={() => handleTitleSelect(e)}
+                    <div onClick={() => handleTitleSelect(e)}
                       className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate?.id === e.id ? 'bg-blue-100 font-medium' : ''}`}>
                       <div className="font-medium">{e.title}</div>
                       <div className="text-xs text-gray-500">{e.date} / {e.building} / {e.staff}</div>
@@ -266,78 +255,51 @@ export default function HistoryPage() {
               </div>
             )}
           </div>
-
-          {/* 担当者▼ */}
-          <select className="border rounded px-1 py-0.5 text-xs w-20"
-            value={filters.staff}
+          <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
             onChange={e => setFilters({ ...filters, staff: e.target.value })}>
             <option value="">担当者▼</option>
             {staffList.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-
-          {/* ビル名▼ */}
-          <select className="border rounded px-1 py-0.5 text-xs w-24"
-            value={filters.building}
+          <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
             onChange={e => setFilters({ ...filters, building: e.target.value })}>
             <option value="">ビル名▼</option>
             {buildings.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
-
-          {/* 工事種別▼ */}
-          <select className="border rounded px-1 py-0.5 text-xs w-20"
-            value={filters.workType}
+          <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
             onChange={e => setFilters({ ...filters, workType: e.target.value })}>
             <option value="">種別▼</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
-
-          {/* 年▼ */}
-          <select className="border rounded px-1 py-0.5 text-xs w-16"
-            value={filters.year}
+          <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
             onChange={e => setFilters({ ...filters, year: e.target.value })}>
             <option value="">年▼</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-
-          {/* Excel */}
           <button onClick={handleExport}
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
-
-          {/* コピー編集 */}
-          <button
-            onClick={handleCopyToEdit}
-            disabled={copying || !selectedEstimate}
+          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate}
             className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
             {copying ? '準備中...' : 'コピー編集'}
           </button>
-
-          {/* 880トグル */}
-          <button
-            onClick={() => setIs880(!is880)}
+          <button onClick={() => setIs880(!is880)}
             style={{
               backgroundColor: is880 ? '#2563eb' : '#ffffff',
               color: is880 ? '#ffffff' : '#2563eb',
               border: '1px solid #2563eb',
-              borderRadius: '4px',
-              padding: '2px 8px',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              borderRadius: '4px', padding: '2px 8px',
+              fontSize: '12px', fontWeight: 'bold',
+              cursor: 'pointer', whiteSpace: 'nowrap',
             }}>
             880
           </button>
-
-          {/* ← リセット */}
           <button onClick={resetFilters}
             className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded text-xs font-bold hover:bg-orange-600 whitespace-nowrap">
             ←
           </button>
         </div>
 
-        {/* 案件情報バー */}
         {selectedEstimate && (
           <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap">
             <span>{selectedEstimate.date}</span>
@@ -348,7 +310,6 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* 明細エリア */}
         <div className="p-4">
           {loading ? (
             <div className="text-center py-8 text-gray-400">読み込み中...</div>
@@ -433,7 +394,6 @@ export default function HistoryPage() {
                   </div>
                 )
               })}
-
               {sectionNames.length > 0 && (
                 <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
                   <span className="text-lg font-bold">建築工事の計</span>
