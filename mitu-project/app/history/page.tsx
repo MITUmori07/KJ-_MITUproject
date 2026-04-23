@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
+const VERSION = 'v0.3.1'
+
 type Estimate = {
   id: number
   date: string
@@ -38,13 +40,16 @@ type Filters = {
   year: string
 }
 
+// 文字数制限
+const t = (str: string | null | undefined, len: number) => (str || '').slice(0, len)
+
 export default function HistoryPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
   const [loading, setLoading] = useState(false)
   const [showTitleList, setShowTitleList] = useState(false)
-  const [is770, setIs770] = useState(false)
+  const [is880, setIs880] = useState(false)
   const [filters, setFilters] = useState<Filters>({
     staff: '', building: '', workType: '', year: ''
   })
@@ -157,17 +162,20 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className={is770 ? 'max-w-[770px] mx-auto' : 'w-full'}>
+    <div className={is880 ? 'max-w-[880px] mx-auto' : 'w-full'}>
       <main className="min-h-screen bg-gray-50">
 
         {/* 上部固定フィルターバー */}
         <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-4 py-2 flex items-center gap-2 flex-wrap">
 
+          {/* バージョン表示 */}
+          <span className="text-xs text-gray-400 font-mono">{VERSION}</span>
+
           {/* 件名▼ カスタムドロップダウン */}
           <div className="relative">
             <button
               onClick={() => setShowTitleList(!showTitleList)}
-              className="border rounded px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100 font-medium border-blue-300">
+              className="border border-blue-300 rounded px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100 font-medium">
               件名▼
             </button>
             {showTitleList && (
@@ -233,13 +241,13 @@ export default function HistoryPage() {
             Excel
           </button>
 
-          {/* 770トグル */}
+          {/* 880トグル */}
           <button
-            onClick={() => setIs770(!is770)}
+            onClick={() => setIs880(!is880)}
             className={`px-3 py-1 rounded text-sm border font-medium transition-colors ${
-              is770 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-600'
+              is880 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-600'
             }`}>
-            770
+            880
           </button>
 
           {/* ← リセット */}
@@ -296,25 +304,43 @@ export default function HistoryPage() {
                         <tbody>
                           {sectionItems.map(item => (
                             <tr key={item.id} className="border-t align-top">
-                              <td className="p-2 text-center">{item.row_order}</td>
-                              <td className="p-2">
-                                {item.name1 && <div>{item.name1}</div>}
-                                {item.name2 && <div className="text-gray-500">{item.name2}</div>}
-                                {item.name3 && <div className="text-gray-500">{item.name3}</div>}
+                              {/* No.: 2桁 */}
+                              <td className="p-2 text-center">
+                                {String(item.row_order).slice(0, 2)}
                               </td>
+                              {/* 名称: 12文字 × 3行 */}
                               <td className="p-2">
-                                {item.spec1 && <div>{item.spec1}</div>}
-                                {item.spec2 && <div className="text-gray-500">{item.spec2}</div>}
-                                {item.spec3 && <div className="text-gray-500">{item.spec3}</div>}
+                                {item.name1 && <div>{t(item.name1, 12)}</div>}
+                                {item.name2 && <div className="text-gray-500">{t(item.name2, 12)}</div>}
+                                {item.name3 && <div className="text-gray-500">{t(item.name3, 12)}</div>}
                               </td>
-                              <td className="p-2 text-right">{item.quantity?.toFixed(1)}</td>
-                              <td className="p-2 text-center">{item.unit}</td>
-                              <td className="p-2 text-right">{fmt(item.unit_price)}</td>
-                              <td className="p-2 text-right">{fmt(item.amount)}</td>
+                              {/* 仕様: 14文字 × 3行 */}
                               <td className="p-2">
-                                {item.note1 && <div>{item.note1}</div>}
-                                {item.note2 && <div className="text-gray-500">{item.note2}</div>}
-                                {item.note3 && <div className="text-gray-500">{item.note3}</div>}
+                                {item.spec1 && <div>{t(item.spec1, 14)}</div>}
+                                {item.spec2 && <div className="text-gray-500">{t(item.spec2, 14)}</div>}
+                                {item.spec3 && <div className="text-gray-500">{t(item.spec3, 14)}</div>}
+                              </td>
+                              {/* 数量: 小数1桁 */}
+                              <td className="p-2 text-right">
+                                {item.quantity?.toFixed(1)}
+                              </td>
+                              {/* 単位: 2文字 */}
+                              <td className="p-2 text-center">
+                                {t(item.unit, 2)}
+                              </td>
+                              {/* 単価: カンマ区切り */}
+                              <td className="p-2 text-right">
+                                {fmt(item.unit_price)}
+                              </td>
+                              {/* 金額: カンマ区切り */}
+                              <td className="p-2 text-right">
+                                {fmt(item.amount)}
+                              </td>
+                              {/* 備考: 7文字 × 3行 */}
+                              <td className="p-2">
+                                {item.note1 && <div>{t(item.note1, 7)}</div>}
+                                {item.note2 && <div className="text-gray-500">{t(item.note2, 7)}</div>}
+                                {item.note3 && <div className="text-gray-500">{t(item.note3, 7)}</div>}
                               </td>
                             </tr>
                           ))}
@@ -323,13 +349,13 @@ export default function HistoryPage() {
                           {expenses.map(exp => (
                             <tr key={exp.id} className="border-t bg-gray-50 align-top">
                               <td className="p-2"></td>
-                              <td className="p-2 text-gray-600">{exp.name1}</td>
-                              <td className="p-2 text-gray-600">{exp.spec1}</td>
+                              <td className="p-2 text-gray-600">{t(exp.name1, 12)}</td>
+                              <td className="p-2 text-gray-600">{t(exp.spec1, 14)}</td>
                               <td className="p-2 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
-                              <td className="p-2 text-center text-gray-600">{exp.unit}</td>
+                              <td className="p-2 text-center text-gray-600">{t(exp.unit, 2)}</td>
                               <td className="p-2 text-right text-gray-600">{fmt(exp.unit_price)}</td>
                               <td className="p-2 text-right text-gray-600">{fmt(exp.amount)}</td>
-                              <td className="p-2 text-gray-600">{exp.note1}</td>
+                              <td className="p-2 text-gray-600">{t(exp.note1, 7)}</td>
                             </tr>
                           ))}
                         </tbody>
