@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.1'
+const VERSION = 'v0.3.2'
 
 type Estimate = {
   id: number
@@ -40,7 +40,6 @@ type Filters = {
   year: string
 }
 
-// 文字数制限
 const t = (str: string | null | undefined, len: number) => (str || '').slice(0, len)
 
 export default function HistoryPage() {
@@ -89,10 +88,8 @@ export default function HistoryPage() {
   const resetFilters = () => {
     setFilters({ staff: '', building: '', workType: '', year: '' })
     setShowTitleList(false)
-    // 明細はそのまま維持
   }
 
-  // 他のフィルター条件で絞り込んだ件名一覧
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
     if (filters.building && e.building !== filters.building) return false
@@ -101,13 +98,11 @@ export default function HistoryPage() {
     return true
   })
 
-  // ドロップダウン選択肢（全件から）
   const staffList = [...new Set(estimates.map(e => e.staff))]
   const buildings = [...new Set(estimates.map(e => e.building))]
   const workTypes = [...new Set(estimates.map(e => e.work_type))]
   const years = [...new Set(estimates.map(e => e.date.slice(0, 4)))].sort().reverse()
 
-  // 経費行を除いた通常明細
   const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
   const sectionNames = [...new Set(normalItems.map(i => i.work_section))]
 
@@ -161,21 +156,34 @@ export default function HistoryPage() {
     a.click()
   }
 
+  // 列幅定義（合計100%）
+  const colWidths = {
+    no:     '3%',
+    name:   '26%',
+    spec:   '24%',
+    qty:    '6%',
+    unit:   '4%',
+    price:  '10%',
+    amount: '11%',
+    note:   '16%',
+  }
+
   return (
-    <div className={is880 ? 'max-w-[880px] mx-auto' : 'w-full'}>
+    // style属性で幅を直接指定（Tailwind動的クラス問題を回避）
+    <div style={is880 ? { maxWidth: '880px', margin: '0 auto' } : {}}>
       <main className="min-h-screen bg-gray-50">
 
         {/* 上部固定フィルターバー */}
-        <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-4 py-2 flex items-center gap-2 flex-wrap">
+        <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1">
 
-          {/* バージョン表示 */}
-          <span className="text-xs text-gray-400 font-mono">{VERSION}</span>
+          {/* バージョン */}
+          <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
 
-          {/* 件名▼ カスタムドロップダウン */}
+          {/* 件名▼ */}
           <div className="relative">
             <button
               onClick={() => setShowTitleList(!showTitleList)}
-              className="border border-blue-300 rounded px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100 font-medium">
+              className="border border-blue-300 rounded px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 font-medium whitespace-nowrap">
               件名▼
             </button>
             {showTitleList && (
@@ -199,8 +207,7 @@ export default function HistoryPage() {
           </div>
 
           {/* 担当者▼ */}
-          <select
-            className="border rounded px-2 py-1 text-sm"
+          <select className="border rounded px-1 py-0.5 text-xs w-20"
             value={filters.staff}
             onChange={e => setFilters({ ...filters, staff: e.target.value })}>
             <option value="">担当者▼</option>
@@ -208,8 +215,7 @@ export default function HistoryPage() {
           </select>
 
           {/* ビル名▼ */}
-          <select
-            className="border rounded px-2 py-1 text-sm"
+          <select className="border rounded px-1 py-0.5 text-xs w-24"
             value={filters.building}
             onChange={e => setFilters({ ...filters, building: e.target.value })}>
             <option value="">ビル名▼</option>
@@ -217,50 +223,54 @@ export default function HistoryPage() {
           </select>
 
           {/* 工事種別▼ */}
-          <select
-            className="border rounded px-2 py-1 text-sm"
+          <select className="border rounded px-1 py-0.5 text-xs w-20"
             value={filters.workType}
             onChange={e => setFilters({ ...filters, workType: e.target.value })}>
-            <option value="">工事種別▼</option>
+            <option value="">種別▼</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
 
           {/* 年▼ */}
-          <select
-            className="border rounded px-2 py-1 text-sm"
+          <select className="border rounded px-1 py-0.5 text-xs w-16"
             value={filters.year}
             onChange={e => setFilters({ ...filters, year: e.target.value })}>
             <option value="">年▼</option>
-            {years.map(y => <option key={y} value={y}>{y}年</option>)}
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
 
-          {/* Excelダウンロード */}
-          <button
-            onClick={handleExport}
-            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
+          {/* Excel */}
+          <button onClick={handleExport}
+            className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
 
           {/* 880トグル */}
           <button
             onClick={() => setIs880(!is880)}
-            className={`px-3 py-1 rounded text-sm border font-medium transition-colors ${
-              is880 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-600'
-            }`}>
+            style={{
+              backgroundColor: is880 ? '#2563eb' : '#ffffff',
+              color: is880 ? '#ffffff' : '#2563eb',
+              border: '1px solid #2563eb',
+              borderRadius: '4px',
+              padding: '2px 8px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}>
             880
           </button>
 
           {/* ← リセット */}
-          <button
-            onClick={resetFilters}
-            className="ml-auto bg-orange-500 text-white px-4 py-1 rounded text-sm font-bold hover:bg-orange-600">
+          <button onClick={resetFilters}
+            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded text-xs font-bold hover:bg-orange-600 whitespace-nowrap">
             ←
           </button>
         </div>
 
         {/* 案件情報バー */}
         {selectedEstimate && (
-          <div className="bg-blue-50 border-b px-4 py-2 text-sm text-gray-700 flex gap-4 flex-wrap">
+          <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap">
             <span>{selectedEstimate.date}</span>
             <span>{selectedEstimate.building}</span>
             <span className="font-medium">{selectedEstimate.title}</span>
@@ -282,88 +292,83 @@ export default function HistoryPage() {
 
                     {/* 工事区分ヘッダー（青帯）*/}
                     <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
-                      <span className="font-bold">{sectionName}</span>
-                      <span className="text-sm">小計 {fmt(subtotal)} 円</span>
+                      <span className="font-bold text-sm">{sectionName}</span>
+                      <span className="text-xs">小計 {fmt(subtotal)} 円</span>
                     </div>
 
                     {/* 明細テーブル */}
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs bg-white border border-t-0">
+                      <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
+                        <colgroup>
+                          <col style={{width: colWidths.no}} />
+                          <col style={{width: colWidths.name}} />
+                          <col style={{width: colWidths.spec}} />
+                          <col style={{width: colWidths.qty}} />
+                          <col style={{width: colWidths.unit}} />
+                          <col style={{width: colWidths.price}} />
+                          <col style={{width: colWidths.amount}} />
+                          <col style={{width: colWidths.note}} />
+                        </colgroup>
                         <thead className="bg-gray-100">
                           <tr>
-                            <th className="p-2 text-center" style={{width:'4%'}}>No.</th>
-                            <th className="p-2 text-left" style={{width:'22%'}}>名称</th>
-                            <th className="p-2 text-left" style={{width:'20%'}}>仕様</th>
-                            <th className="p-2 text-right" style={{width:'7%'}}>数量</th>
-                            <th className="p-2 text-center" style={{width:'5%'}}>単位</th>
-                            <th className="p-2 text-right" style={{width:'10%'}}>単価</th>
-                            <th className="p-2 text-right" style={{width:'12%'}}>金額</th>
-                            <th className="p-2 text-left" style={{width:'20%'}}>備考</th>
+                            <th className="p-1 text-center">No.</th>
+                            <th className="p-1 text-left">名称</th>
+                            <th className="p-1 text-left">仕様</th>
+                            <th className="p-1 text-right">数量</th>
+                            <th className="p-1 text-center">単位</th>
+                            <th className="p-1 text-right">単価</th>
+                            <th className="p-1 text-right">金額</th>
+                            <th className="p-1 text-left">備考</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sectionItems.map(item => (
                             <tr key={item.id} className="border-t align-top">
-                              {/* No.: 2桁 */}
-                              <td className="p-2 text-center">
-                                {String(item.row_order).slice(0, 2)}
+                              <td className="p-1 text-center">{String(item.row_order).slice(0,2)}</td>
+                              {/* 名称: 12文字・10pt相当 */}
+                              <td className="p-1 overflow-hidden">
+                                {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
+                                {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
+                                {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
                               </td>
-                              {/* 名称: 12文字 × 3行 */}
-                              <td className="p-2">
-                                {item.name1 && <div>{t(item.name1, 12)}</div>}
-                                {item.name2 && <div className="text-gray-500">{t(item.name2, 12)}</div>}
-                                {item.name3 && <div className="text-gray-500">{t(item.name3, 12)}</div>}
+                              {/* 仕様: 16文字・9pt相当 */}
+                              <td className="p-1 overflow-hidden">
+                                {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
+                                {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
+                                {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
                               </td>
-                              {/* 仕様: 14文字 × 3行 */}
-                              <td className="p-2">
-                                {item.spec1 && <div>{t(item.spec1, 14)}</div>}
-                                {item.spec2 && <div className="text-gray-500">{t(item.spec2, 14)}</div>}
-                                {item.spec3 && <div className="text-gray-500">{t(item.spec3, 14)}</div>}
-                              </td>
-                              {/* 数量: 小数1桁 */}
-                              <td className="p-2 text-right">
-                                {item.quantity?.toFixed(1)}
-                              </td>
-                              {/* 単位: 2文字 */}
-                              <td className="p-2 text-center">
-                                {t(item.unit, 2)}
-                              </td>
-                              {/* 単価: カンマ区切り */}
-                              <td className="p-2 text-right">
-                                {fmt(item.unit_price)}
-                              </td>
-                              {/* 金額: カンマ区切り */}
-                              <td className="p-2 text-right">
-                                {fmt(item.amount)}
-                              </td>
-                              {/* 備考: 7文字 × 3行 */}
-                              <td className="p-2">
-                                {item.note1 && <div>{t(item.note1, 7)}</div>}
-                                {item.note2 && <div className="text-gray-500">{t(item.note2, 7)}</div>}
-                                {item.note3 && <div className="text-gray-500">{t(item.note3, 7)}</div>}
+                              <td className="p-1 text-right">{item.quantity?.toFixed(1)}</td>
+                              <td className="p-1 text-center">{t(item.unit,2)}</td>
+                              <td className="p-1 text-right">{fmt(item.unit_price)}</td>
+                              <td className="p-1 text-right">{fmt(item.amount)}</td>
+                              {/* 備考: 7文字・幅狭め */}
+                              <td className="p-1 overflow-hidden">
+                                {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
+                                {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
+                                {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
                               </td>
                             </tr>
                           ))}
 
-                          {/* 経費行（グレー背景）*/}
+                          {/* 経費行 */}
                           {expenses.map(exp => (
                             <tr key={exp.id} className="border-t bg-gray-50 align-top">
-                              <td className="p-2"></td>
-                              <td className="p-2 text-gray-600">{t(exp.name1, 12)}</td>
-                              <td className="p-2 text-gray-600">{t(exp.spec1, 14)}</td>
-                              <td className="p-2 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
-                              <td className="p-2 text-center text-gray-600">{t(exp.unit, 2)}</td>
-                              <td className="p-2 text-right text-gray-600">{fmt(exp.unit_price)}</td>
-                              <td className="p-2 text-right text-gray-600">{fmt(exp.amount)}</td>
-                              <td className="p-2 text-gray-600">{t(exp.note1, 7)}</td>
+                              <td className="p-1"></td>
+                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.name1,12)}</td>
+                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.spec1,16)}</td>
+                              <td className="p-1 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
+                              <td className="p-1 text-center text-gray-600">{t(exp.unit,2)}</td>
+                              <td className="p-1 text-right text-gray-600">{fmt(exp.unit_price)}</td>
+                              <td className="p-1 text-right text-gray-600">{fmt(exp.amount)}</td>
+                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.note1,7)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
 
-                    {/* 工事区分合計（100単位切り捨て）*/}
-                    <div className="bg-gray-200 border border-t-0 px-4 py-2 flex justify-between font-bold text-sm">
+                    {/* 工事区分合計 */}
+                    <div className="bg-gray-200 border border-t-0 px-4 py-1.5 flex justify-between font-bold text-sm">
                       <span>{sectionName}　合計</span>
                       <span>{fmt(total)} 円</span>
                     </div>
