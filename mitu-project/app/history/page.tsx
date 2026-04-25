@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.0.4
+// バージョン: V4.0.5
 // 更新: 2026/04/25
-// 変更: コピー編集時にitemsを再fetchして確実に正しいデータを取得
+// 変更: window.location.replaceに変更（遷移不具合修正）
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.0.4'
+const VERSION = 'V4.0.5'
 
 const normalizeWorkType = (wt: string) =>
   wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
@@ -115,7 +115,7 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  // ▼ V4.0.4修正: selectedEstimate.idで直接再fetch（staleなstate itemsを使わない）
+  // ▼ V4.0.5修正: selectedEstimate.idで直接再fetch（staleなstate itemsを使わない）
   const handleCopyToEdit = async () => {
     if (!selectedEstimate) return
     setCopying(true)
@@ -188,9 +188,9 @@ export default function HistoryPage() {
       work_type: normalizeWorkType(selectedEstimate.work_type),
       draft_id: String(data.id),
     })
-    window.location.href = `/estimate?${p.toString()}`
+    window.location.replace(`/estimate?${p.toString()}`)
   }
-  // ▲ V4.0.4修正ここまで
+  // ▲ V4.0.5修正ここまで
 
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
