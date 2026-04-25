@@ -1,17 +1,17 @@
 // ============================================================
-// ファイル: mitu-project/app/history/page.tsx
-// バージョン: v0.3.9
-// 更新: 2026/04/24
-// 変更: コピー編集時にitems/selectedEstimate不一致チェック追加
-// コミットメッセージ:
-//   history v0.3.9: コピー編集のrace condition対策
+// ディレクトリ: mitu-project/app/history/
+// ファイル名: page.tsx
+// バージョン: V4.0.2
+// 更新: 2026/04/25
+// 変更: コピー編集をトップ画面経由せず明細画面へ直接遷移
+//       sessionStorage廃止・drafts直接insert
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.9'
+const VERSION = 'V4.0.2'
 
 // work_type全角→半角正規化
 const normalizeWorkType = (wt: string) =>
@@ -105,7 +105,6 @@ export default function HistoryPage() {
     setShowTitleList(false)
   }
 
-  // フィルタ変更時に絞り込み結果の先頭をselectedEstimateに自動切り替え
   const handleFilterChange = (newFilters: Filters) => {
     setFilters(newFilters)
     const filtered = estimates.filter(e => {
@@ -118,9 +117,9 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  const handleCopyToEdit = () => {
+  // ▼ V4.0.2修正: sessionStorage廃止・drafts直接insert・明細画面へ直接遷移
+  const handleCopyToEdit = async () => {
     if (!selectedEstimate || items.length === 0) return
-    // itemsがselectedEstimateのものか確認（race condition対策）
     if (items[0].estimate_id !== selectedEstimate.id) {
       alert('データ読込中です。少し待ってから押してください')
       return
@@ -156,32 +155,37 @@ export default function HistoryPage() {
         }))
     }))
 
-    // sessionStorageに一時保持(Supabase drafts insertはトップ画面で行う)
-    try {
-      sessionStorage.setItem('kjm_copy_draft', JSON.stringify({
-        sections,
-        building: selectedEstimate.building,
-        staff: selectedEstimate.staff,
-        work_type: normalizeWorkType(selectedEstimate.work_type),
-        source_estimate_id: selectedEstimate.id,
-      }))
-    } catch (e) {
+    // draftsに直接insert（date・titleは空・コピーモード）
+    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
+    const { data, error } = await supabase.from('drafts').insert({
+      file_key,
+      date: '',
+      building: selectedEstimate.building,
+      title: '',
+      staff: selectedEstimate.staff,
+      work_type: normalizeWorkType(selectedEstimate.work_type),
+      sections,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+
+    if (error || !data) {
+      alert('コピー保存に失敗しました')
       setCopying(false)
-      alert('コピーデータの一時保存に失敗しました')
       return
     }
 
     setCopying(false)
 
-    // トップページへ遷移(mode=copy、draft_idは付けない)
-    const params = new URLSearchParams({
+    // 明細画面へ直接遷移（date・titleは空・draft_idあり→コピー編集モード）
+    const p = new URLSearchParams({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      mode: 'copy',
+      draft_id: String(data.id),
     })
-    router.push(`/?${params.toString()}`)
+    router.push(`/estimate?${p.toString()}`)
   }
+  // ▲ V4.0.2修正ここまで
 
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
@@ -331,7 +335,7 @@ export default function HistoryPage() {
             880
           </button>
           <button onClick={resetFilters}
-            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded text-xs font-bold hover:bg-orange-600 whitespace-nowrap">
+            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap">
             ←
           </button>
         </div>
