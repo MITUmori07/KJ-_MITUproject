@@ -1,17 +1,20 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.1.0
+// バージョン: V4.2.0
 // 更新: 2026/04/25
-// 変更: estimate画面をhistory内に埋め込み・URL遷移廃止
+// 変更: 行挿入・削除ボタン追加、ポップアップにhistory/単価マスタタブ追加
+//       工事区分固定順（解体=最初・特殊仮設=最後）
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.1.0'
+const VERSION = 'V4.2.0'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
-const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
+const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
+const FIRST_SECTION = '解体工事'
+const LAST_SECTION = '特殊仮設工事'
 
 const normalizeWorkType = (wt: string) =>
   wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
@@ -44,6 +47,18 @@ type EstimateItem = {
   note1: string | null
   note2: string | null
   note3: string | null
+}
+
+type MasterItem = {
+  id: number
+  name1: string
+  name2: string | null
+  name3: string | null
+  spec1: string | null
+  spec2: string | null
+  spec3: string | null
+  unit: string | null
+  item_prices: { fiscal_year: number; price1: number }[]
 }
 
 type PopupItem = {
@@ -108,16 +123,23 @@ export default function HistoryPage() {
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
+
+  // --- ポップアップstate ---
   const [popup, setPopup] = useState<{
     sectionId: string; rowId: string; workSection: string
   } | null>(null)
+  const [popupTab, setPopupTab] = useState<'history' | 'master'>('history')
   const [popupItems, setPopupItems] = useState<PopupItem[]>([])
+  const [masterItems, setMasterItems] = useState<MasterItem[]>([])
   const [popupLoading, setPopupLoading] = useState(false)
   const [popupSearch, setPopupSearch] = useState('')
+  const [fiscalYear, setFiscalYear] = useState<number>(2026)
+  const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
 
   useEffect(() => {
     loadEstimates()
     loadUnits()
+    loadAvailableYears()
   }, [])
 
   // ==================== history関数 ====================
@@ -166,7 +188,6 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  // ▼ V4.1.0: 遷移廃止・state切り替えに変更
   const handleCopyToEdit = async () => {
     if (!selectedEstimate) return
     setCopying(true)
@@ -185,9 +206,10 @@ export default function HistoryPage() {
     }
 
     const normalItems = freshItems.filter((i: EstimateItem) => !i.work_section.startsWith('経費_'))
-    const sectionNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))]
+    const rawSectionNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))] as string[]
+    const sectionNames = sortSectionNames(rawSectionNames)
 
-    const newSections = (sectionNames as string[]).map((name: string) => ({
+    const newSections = sectionNames.map((name: string) => ({
       id: Math.random().toString(36).slice(2),
       name,
       rows: normalItems
@@ -230,7 +252,6 @@ export default function HistoryPage() {
       return
     }
 
-    // stateにセットして画面切り替え
     setSections(newSections)
     setCopyInfo({
       building: selectedEstimate.building,
@@ -242,19 +263,38 @@ export default function HistoryPage() {
     setShowEstimate(true)
   }
 
+  // ==================== 工事区分ソート ====================
+  const sortSectionNames = (names: string[]) => {
+    const result: string[] = []
+    const hasFirst = names.includes(FIRST_SECTION)
+    const hasLast = names.includes(LAST_SECTION)
+    const middle = names.filter(n => n !== FIRST_SECTION && n !== LAST_SECTION)
+    if (hasFirst) result.push(FIRST_SECTION)
+    result.push(...middle)
+    if (hasLast) result.push(LAST_SECTION)
+    return result
+  }
+
   // ==================== estimate関数 ====================
   const loadUnits = async () => {
     const { data } = await supabase.from('settings').select('value').eq('key','units').single()
     if (data) setUnits(data.value as string[])
   }
 
+  const loadAvailableYears = async () => {
+    const { data } = await supabase
+      .from('item_prices')
+      .select('fiscal_year')
+      .order('fiscal_year', { ascending: false })
+    if (data) {
+      const years = [...new Set(data.map((d: {fiscal_year: number}) => d.fiscal_year))] as number[]
+      setAvailableYears(years)
+      if (years.length > 0) setFiscalYear(years[0])
+    }
+  }
+
   const saveDraft = async () => {
     if (!copyInfo) return
-    if (!copyInfo.building) {
-      setSavedMsg('⚠️ 情報が不足しています')
-      setTimeout(() => setSavedMsg(''), 3000)
-      return
-    }
     setSaving(true)
     const sectionsToSave = sections.map(s => ({
       ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false }))
@@ -275,10 +315,17 @@ export default function HistoryPage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
+  // ポップアップを開く
   const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
+    setPopupTab('history')
     setPopupLoading(true)
+    await loadPopupHistory(sectionName)
+    setPopupLoading(false)
+  }
+
+  const loadPopupHistory = async (sectionName: string) => {
     const { data } = await supabase
       .from('estimate_items')
       .select('id,name1,name2,name3,spec1,spec2,spec3,unit,unit_price,note1,note2,note3,estimate_id')
@@ -286,12 +333,24 @@ export default function HistoryPage() {
       .not('name1', 'is', null)
       .order('name1')
     setPopupItems(data || [])
+  }
+
+  const loadPopupMaster = async () => {
+    setPopupLoading(true)
+    const { data } = await supabase
+      .from('items')
+      .select('id,name1,name2,name3,spec1,spec2,spec3,unit,item_prices(fiscal_year,price1)')
+      .order('name1')
+    setMasterItems(data || [])
     setPopupLoading(false)
   }
 
-  const handleNameInput = (sectionId: string, rowId: string, sectionName: string, value: string) => {
-    updateRow(sectionId, rowId, 'name1', value)
-    if (value.length >= 2) openPopup(sectionId, rowId, sectionName)
+  const handleTabChange = async (tab: 'history' | 'master') => {
+    setPopupTab(tab)
+    setPopupSearch('')
+    if (tab === 'master' && masterItems.length === 0) {
+      await loadPopupMaster()
+    }
   }
 
   const selectPopupItem = (item: PopupItem) => {
@@ -318,6 +377,32 @@ export default function HistoryPage() {
     setPopup(null)
   }
 
+  const selectMasterItem = (item: MasterItem) => {
+    if (!popup) return
+    const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
+      || item.item_prices?.[0]
+    const unit_price = priceObj?.price1?.toString() || ''
+    setSections(prev => prev.map(s => {
+      if (s.id !== popup.sectionId) return s
+      return {
+        ...s, rows: s.rows.map(r => {
+          if (r.id !== popup.rowId) return r
+          return {
+            ...r,
+            name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+            spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+            unit: item.unit || '', unit_price,
+            amount: 0,
+            note1: '', note2: '', note3: '',
+            source_estimate_item_id: null,
+            showCandidates: false
+          }
+        })
+      }
+    }))
+    setPopup(null)
+  }
+
   const filteredPopupItems = popupItems.filter(item => {
     if (!popupSearch) return true
     const kw = popupSearch.toLowerCase()
@@ -328,6 +413,13 @@ export default function HistoryPage() {
     arr.findIndex(x => x.name1 === item.name1 && x.spec1 === item.spec1) === idx
   )
 
+  const filteredMasterItems = masterItems.filter(item => {
+    if (!popupSearch) return true
+    const kw = popupSearch.toLowerCase()
+    return (item.name1 || '').toLowerCase().includes(kw) || (item.spec1 || '').toLowerCase().includes(kw)
+  })
+
+  // ==================== 行操作 ====================
   const newRow = (): Row => ({
     id: Math.random().toString(36).slice(2),
     name1:'', name2:'', name3:'',
@@ -338,20 +430,29 @@ export default function HistoryPage() {
     source_estimate_item_id: null
   })
 
-  const addSection = (name: string) => {
-    if (!name.trim()) return
-    setSections(prev => [...prev, { id: Math.random().toString(36).slice(2), name, rows: [] }])
-    setCustomSection('')
-    setShowSectionInput(false)
+  // 行の下に挿入
+  const insertRowAfter = (sectionId: string, rowId: string, sectionName: string) => {
+    const row = newRow()
+    setSections(prev => prev.map(s => {
+      if (s.id !== sectionId) return s
+      const idx = s.rows.findIndex(r => r.id === rowId)
+      const newRows = [...s.rows]
+      newRows.splice(idx + 1, 0, row)
+      return { ...s, rows: newRows }
+    }))
+    openPopup(sectionId, row.id, sectionName)
   }
 
-  const deleteSection = (id: string) => setSections(prev => prev.filter(s => s.id !== id))
-
-  const addRow = (sectionId: string, sectionName: string) => {
+  // 行の上に挿入
+  const insertRowBefore = (sectionId: string, rowId: string, sectionName: string) => {
     const row = newRow()
-    setSections(prev => prev.map(s =>
-      s.id === sectionId ? { ...s, rows: [...s.rows, row] } : s
-    ))
+    setSections(prev => prev.map(s => {
+      if (s.id !== sectionId) return s
+      const idx = s.rows.findIndex(r => r.id === rowId)
+      const newRows = [...s.rows]
+      newRows.splice(idx, 0, row)
+      return { ...s, rows: newRows }
+    }))
     openPopup(sectionId, row.id, sectionName)
   }
 
@@ -376,6 +477,22 @@ export default function HistoryPage() {
       }
     }))
   }
+
+  // ==================== 工事区分操作 ====================
+  const addSection = (name: string) => {
+    if (!name.trim()) return
+    setSections(prev => {
+      const newSection = { id: Math.random().toString(36).slice(2), name, rows: [] }
+      // 解体=最初・特殊仮設=最後を維持
+      const withoutLast = prev.filter(s => s.name !== LAST_SECTION)
+      const last = prev.find(s => s.name === LAST_SECTION)
+      return last ? [...withoutLast, newSection, last] : [...withoutLast, newSection]
+    })
+    setCustomSection('')
+    setShowSectionInput(false)
+  }
+
+  const deleteSection = (id: string) => setSections(prev => prev.filter(s => s.id !== id))
 
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
   const grandTotal = sections.reduce((sum, s) => sum + subtotal(s), 0)
@@ -434,10 +551,10 @@ export default function HistoryPage() {
   const getSectionData = (sectionName: string) => {
     const sectionItems = normalItems.filter(i => i.work_section === sectionName)
     const expenses = items.filter(i => i.work_section === `経費_${sectionName}`)
-    const subtotal = sectionItems.reduce((sum, i) => sum + (i.amount || 0), 0)
+    const subtotalVal = sectionItems.reduce((sum, i) => sum + (i.amount || 0), 0)
     const expTotal = expenses.reduce((sum, i) => sum + (i.amount || 0), 0)
-    const total = Math.floor((subtotal + expTotal) / 100) * 100
-    return { sectionItems, expenses, subtotal, total }
+    const total = Math.floor((subtotalVal + expTotal) / 100) * 100
+    return { sectionItems, expenses, subtotal: subtotalVal, total }
   }
 
   const historyGrandTotal = sectionNames.reduce((sum, name) => sum + getSectionData(name).total, 0)
@@ -484,6 +601,127 @@ export default function HistoryPage() {
     unit: '4%', price: '10%', amount: '11%', note: '16%',
   }
 
+  // ==================== ポップアップUI ====================
+  const PopupUI = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
+          <h3 className="text-white font-bold">品目選択 - {popup?.workSection}</h3>
+          <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
+        </div>
+
+        {/* タブ */}
+        <div className="flex border-b">
+          <button
+            onClick={() => handleTabChange('history')}
+            className={`flex-1 py-2 text-sm font-medium ${popupTab === 'history' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
+            過去見積
+          </button>
+          <button
+            onClick={() => handleTabChange('master')}
+            className={`flex-1 py-2 text-sm font-medium ${popupTab === 'master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
+            単価マスタ
+          </button>
+        </div>
+
+        {/* 年度セレクト（masterタブのみ） */}
+        {popupTab === 'master' && (
+          <div className="px-3 pt-2 flex items-center gap-2">
+            <span className="text-xs text-gray-500">年度:</span>
+            <select className="border rounded px-2 py-1 text-xs"
+              value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
+              {availableYears.map(y => <option key={y} value={y}>{y}年度</option>)}
+            </select>
+          </div>
+        )}
+
+        {/* 検索 */}
+        <div className="p-3 border-b">
+          <input className="w-full border rounded px-3 py-2 text-sm" placeholder="名称・仕様で絞り込み"
+            value={popupSearch} onChange={e => setPopupSearch(e.target.value)} autoFocus />
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          {popupLoading ? (
+            <div className="p-8 text-center text-gray-400">読み込み中...</div>
+          ) : popupTab === 'history' ? (
+            uniquePopupItems.length === 0 ? (
+              <div className="p-8 text-center text-gray-400">
+                {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
+              </div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">名称</th>
+                    <th className="p-2 text-left">仕様</th>
+                    <th className="p-2 text-left w-12">単位</th>
+                    <th className="p-2 text-right w-20">単価</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniquePopupItems.map(item => (
+                    <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
+                      onClick={() => selectPopupItem(item)}>
+                      <td className="p-2">
+                        <div>{item.name1}</div>
+                        {item.name2 && <div className="text-gray-400">{item.name2}</div>}
+                      </td>
+                      <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
+                      <td className="p-2">{item.unit}</td>
+                      <td className="p-2 text-right font-medium">
+                        {item.unit_price ? item.unit_price.toLocaleString() : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          ) : (
+            filteredMasterItems.length === 0 ? (
+              <div className="p-8 text-center text-gray-400">
+                {popupSearch ? '該当する品目がありません' : '品目データがありません'}
+              </div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">名称</th>
+                    <th className="p-2 text-left">仕様</th>
+                    <th className="p-2 text-left w-12">単位</th>
+                    <th className="p-2 text-right w-24">{fiscalYear}年度単価</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMasterItems.map(item => {
+                    const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
+                    return (
+                      <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
+                        onClick={() => selectMasterItem(item)}>
+                        <td className="p-2">
+                          <div>{item.name1}</div>
+                          {item.name2 && <div className="text-gray-400">{item.name2}</div>}
+                        </td>
+                        <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
+                        <td className="p-2">{item.unit}</td>
+                        <td className="p-2 text-right font-medium">
+                          {priceObj ? priceObj.price1.toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
+        <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
+          {popupTab === 'history' ? uniquePopupItems.length : filteredMasterItems.length}件表示
+        </div>
+      </div>
+    </div>
+  )
+
   // ==================== estimate画面 ====================
   if (showEstimate && copyInfo) {
     return (
@@ -518,7 +756,7 @@ export default function HistoryPage() {
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="p-2 text-left w-8"></th>
+                      <th className="p-2 text-left w-10">操作</th>
                       <th className="p-2 text-left w-44">名称</th>
                       <th className="p-2 text-left w-36">仕様</th>
                       <th className="p-2 text-right w-16">数量</th>
@@ -526,21 +764,38 @@ export default function HistoryPage() {
                       <th className="p-2 text-right w-20">単価</th>
                       <th className="p-2 text-right w-22">金額</th>
                       <th className="p-2 text-left w-28">備考</th>
-                      <th className="p-2 w-6"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {section.rows.map(row => (
+                    {section.rows.map((row, rowIdx) => (
                       <tr key={row.id} className="border-t align-top">
-                        <td className="p-1 pt-2">
-                          <button
-                            onClick={() => openPopup(section.id, row.id, section.name)}
-                            className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
-                            title="品目選択">📋</button>
+                        {/* 左列ボタン */}
+                        <td className="p-1 align-top">
+                          <div className="flex flex-col gap-0.5 items-center pt-1">
+                            {/* 最上行のみ上挿入ボタン表示 */}
+                            {rowIdx === 0 && (
+                              <button
+                                onClick={() => insertRowBefore(section.id, row.id, section.name)}
+                                className="w-7 h-6 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs font-bold"
+                                title="上に行挿入">＋</button>
+                            )}
+                            <button
+                              onClick={() => openPopup(section.id, row.id, section.name)}
+                              className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
+                              title="品目選択">📋</button>
+                            <button
+                              onClick={() => deleteRow(section.id, row.id)}
+                              className="w-7 h-6 bg-red-100 hover:bg-red-200 text-red-600 rounded text-xs font-bold"
+                              title="行削除">➖</button>
+                            <button
+                              onClick={() => insertRowAfter(section.id, row.id, section.name)}
+                              className="w-7 h-6 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs font-bold"
+                              title="下に行挿入">＋</button>
+                          </div>
                         </td>
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 mb-1" value={row.name1} placeholder="名称1段目"
-                            onChange={e => handleNameInput(section.id, row.id, section.name, e.target.value)} />
+                            onChange={e => updateRow(section.id, row.id, 'name1', e.target.value)} />
                           <input className="w-full border rounded px-2 py-1 mb-1" value={row.name2} placeholder="名称2段目"
                             onChange={e => updateRow(section.id, row.id, 'name2', e.target.value)} />
                           <input className="w-full border rounded px-2 py-1" value={row.name3} placeholder="名称3段目"
@@ -583,15 +838,20 @@ export default function HistoryPage() {
                           <input className="w-full border rounded px-2 py-1" value={row.note3} placeholder="備考3段目"
                             onChange={e => updateRow(section.id, row.id, 'note3', e.target.value)} />
                         </td>
-                        <td className="p-1 pt-2">
-                          <button onClick={() => deleteRow(section.id, row.id)} className="text-red-400 hover:text-red-600 text-lg">×</button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div className="p-2 flex justify-between items-center border-t">
-                  <button onClick={() => addRow(section.id, section.name)} className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
+                  <button
+                    onClick={() => {
+                      const row = newRow()
+                      setSections(prev => prev.map(s =>
+                        s.id === section.id ? { ...s, rows: [...s.rows, row] } : s
+                      ))
+                      openPopup(section.id, row.id, section.name)
+                    }}
+                    className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
                   <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
                 </div>
               </div>
@@ -640,59 +900,7 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {popup && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
-                <h3 className="text-white font-bold">品目選択 - {popup.workSection}</h3>
-                <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
-              </div>
-              <div className="p-3 border-b">
-                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="名称・仕様で絞り込み"
-                  value={popupSearch} onChange={e => setPopupSearch(e.target.value)} autoFocus />
-              </div>
-              <div className="overflow-y-auto flex-1">
-                {popupLoading ? (
-                  <div className="p-8 text-center text-gray-400">読み込み中...</div>
-                ) : uniquePopupItems.length === 0 ? (
-                  <div className="p-8 text-center text-gray-400">
-                    {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
-                  </div>
-                ) : (
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="p-2 text-left">名称</th>
-                        <th className="p-2 text-left">仕様</th>
-                        <th className="p-2 text-left w-12">単位</th>
-                        <th className="p-2 text-right w-20">単価</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {uniquePopupItems.map(item => (
-                        <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
-                          onClick={() => selectPopupItem(item)}>
-                          <td className="p-2">
-                            <div>{item.name1}</div>
-                            {item.name2 && <div className="text-gray-400">{item.name2}</div>}
-                          </td>
-                          <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
-                          <td className="p-2">{item.unit}</td>
-                          <td className="p-2 text-right font-medium">
-                            {item.unit_price ? item.unit_price.toLocaleString() : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-              <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
-                {uniquePopupItems.length}件表示
-              </div>
-            </div>
-          </div>
-        )}
+        {popup && <PopupUI />}
       </main>
     )
   }
@@ -787,12 +995,12 @@ export default function HistoryPage() {
           ) : (
             <>
               {sectionNames.map(sectionName => {
-                const { sectionItems, expenses, subtotal, total } = getSectionData(sectionName)
+                const { sectionItems, expenses, subtotal: subtotalVal, total } = getSectionData(sectionName)
                 return (
                   <div key={sectionName} className="mb-6">
                     <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
                       <span className="font-bold text-sm">{sectionName}</span>
-                      <span className="text-xs">小計 {fmt(subtotal)} 円</span>
+                      <span className="text-xs">小計 {fmt(subtotalVal)} 円</span>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
