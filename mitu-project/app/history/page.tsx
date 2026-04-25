@@ -1,20 +1,22 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.0.6
+// バージョン: V4.1.0
 // 更新: 2026/04/25
-// 変更: aタグクリックで強制遷移
+// 変更: estimate画面をhistory内に埋め込み・URL遷移廃止
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.0.6'
+const VERSION = 'V4.1.0'
+const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
+const PRESET_SECTIONS = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
 
 const normalizeWorkType = (wt: string) =>
   wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
 
+// ==================== 型定義 ====================
 type Estimate = {
   id: number
   date: string
@@ -44,6 +46,26 @@ type EstimateItem = {
   note3: string | null
 }
 
+type PopupItem = {
+  id: number
+  name1: string; name2: string | null; name3: string | null
+  spec1: string | null; spec2: string | null; spec3: string | null
+  unit: string | null; unit_price: number | null
+  note1: string | null; note2: string | null; note3: string | null
+  estimate_id: number
+}
+
+type Row = {
+  id: string; name1: string; name2: string; name3: string
+  spec1: string; spec2: string; spec3: string
+  quantity: string; unit: string; unit_price: string; amount: number
+  note1: string; note2: string; note3: string
+  showCandidates: boolean
+  source_estimate_item_id: number | null
+}
+
+type Section = { id: string; name: string; rows: Row[] }
+
 type Filters = {
   staff: string
   building: string
@@ -51,10 +73,19 @@ type Filters = {
   year: string
 }
 
+type CopyInfo = {
+  building: string
+  staff: string
+  work_type: string
+  draft_id: number
+}
+
 const t = (str: string | null | undefined, len: number) => (str || '').slice(0, len)
 
+// ==================== メインコンポーネント ====================
 export default function HistoryPage() {
-  const router = useRouter()
+
+  // --- history用state ---
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
@@ -66,10 +97,30 @@ export default function HistoryPage() {
     staff: '', building: '', workType: '', year: ''
   })
 
+  // --- 画面切り替え用state ---
+  const [showEstimate, setShowEstimate] = useState(false)
+  const [copyInfo, setCopyInfo] = useState<CopyInfo | null>(null)
+
+  // --- estimate用state ---
+  const [sections, setSections] = useState<Section[]>([])
+  const [customSection, setCustomSection] = useState('')
+  const [showSectionInput, setShowSectionInput] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+  const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
+  const [popup, setPopup] = useState<{
+    sectionId: string; rowId: string; workSection: string
+  } | null>(null)
+  const [popupItems, setPopupItems] = useState<PopupItem[]>([])
+  const [popupLoading, setPopupLoading] = useState(false)
+  const [popupSearch, setPopupSearch] = useState('')
+
   useEffect(() => {
     loadEstimates()
+    loadUnits()
   }, [])
 
+  // ==================== history関数 ====================
   const loadEstimates = async () => {
     const { data } = await supabase
       .from('estimates')
@@ -115,7 +166,7 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  // ▼ V4.0.6修正: selectedEstimate.idで直接再fetch（staleなstate itemsを使わない）
+  // ▼ V4.1.0: 遷移廃止・state切り替えに変更
   const handleCopyToEdit = async () => {
     if (!selectedEstimate) return
     setCopying(true)
@@ -136,7 +187,7 @@ export default function HistoryPage() {
     const normalItems = freshItems.filter((i: EstimateItem) => !i.work_section.startsWith('経費_'))
     const sectionNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))]
 
-    const sections = (sectionNames as string[]).map((name: string) => ({
+    const newSections = (sectionNames as string[]).map((name: string) => ({
       id: Math.random().toString(36).slice(2),
       name,
       rows: normalItems
@@ -149,14 +200,13 @@ export default function HistoryPage() {
           spec1: item.spec1 || '',
           spec2: item.spec2 || '',
           spec3: item.spec3 || '',
-          quantity: String(item.quantity ?? ''),
+          quantity: '',
           unit: item.unit || '',
           unit_price: String(item.unit_price ?? ''),
-          amount: item.amount || 0,
+          amount: 0,
           note1: item.note1 || '',
           note2: item.note2 || '',
           note3: item.note3 || '',
-          candidates: [],
           showCandidates: false,
           source_estimate_item_id: item.id,
         }))
@@ -170,7 +220,7 @@ export default function HistoryPage() {
       title: '',
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      sections,
+      sections: newSections,
       updated_at: new Date().toISOString()
     }).select('id').single()
 
@@ -180,18 +230,180 @@ export default function HistoryPage() {
       return
     }
 
-    setCopying(false)
-
-    const p = new URLSearchParams({
+    // stateにセットして画面切り替え
+    setSections(newSections)
+    setCopyInfo({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      draft_id: String(data.id),
+      draft_id: data.id,
     })
-    const a = document.createElement("a"); a.href = `/estimate?${p.toString()}`; document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    setCopying(false)
+    setShowEstimate(true)
   }
-  // ▲ V4.0.6修正ここまで
 
+  // ==================== estimate関数 ====================
+  const loadUnits = async () => {
+    const { data } = await supabase.from('settings').select('value').eq('key','units').single()
+    if (data) setUnits(data.value as string[])
+  }
+
+  const saveDraft = async () => {
+    if (!copyInfo) return
+    if (!copyInfo.building) {
+      setSavedMsg('⚠️ 情報が不足しています')
+      setTimeout(() => setSavedMsg(''), 3000)
+      return
+    }
+    setSaving(true)
+    const sectionsToSave = sections.map(s => ({
+      ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false }))
+    }))
+    await supabase.from('drafts').upsert({
+      id: copyInfo.draft_id,
+      file_key: `copy_${copyInfo.draft_id}`,
+      date: '',
+      building: copyInfo.building,
+      title: '',
+      staff: copyInfo.staff,
+      work_type: copyInfo.work_type,
+      sections: sectionsToSave,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' })
+    setSaving(false)
+    setSavedMsg('保存しました！')
+    setTimeout(() => setSavedMsg(''), 3000)
+  }
+
+  const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
+    setPopup({ sectionId, rowId, workSection: sectionName })
+    setPopupSearch('')
+    setPopupLoading(true)
+    const { data } = await supabase
+      .from('estimate_items')
+      .select('id,name1,name2,name3,spec1,spec2,spec3,unit,unit_price,note1,note2,note3,estimate_id')
+      .eq('work_section', sectionName)
+      .not('name1', 'is', null)
+      .order('name1')
+    setPopupItems(data || [])
+    setPopupLoading(false)
+  }
+
+  const handleNameInput = (sectionId: string, rowId: string, sectionName: string, value: string) => {
+    updateRow(sectionId, rowId, 'name1', value)
+    if (value.length >= 2) openPopup(sectionId, rowId, sectionName)
+  }
+
+  const selectPopupItem = (item: PopupItem) => {
+    if (!popup) return
+    setSections(prev => prev.map(s => {
+      if (s.id !== popup.sectionId) return s
+      return {
+        ...s, rows: s.rows.map(r => {
+          if (r.id !== popup.rowId) return r
+          const unit_price = item.unit_price?.toString() || ''
+          return {
+            ...r,
+            name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+            spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+            unit: item.unit || '', unit_price,
+            amount: 0,
+            note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
+            source_estimate_item_id: item.id,
+            showCandidates: false
+          }
+        })
+      }
+    }))
+    setPopup(null)
+  }
+
+  const filteredPopupItems = popupItems.filter(item => {
+    if (!popupSearch) return true
+    const kw = popupSearch.toLowerCase()
+    return (item.name1 || '').toLowerCase().includes(kw) || (item.spec1 || '').toLowerCase().includes(kw)
+  })
+
+  const uniquePopupItems = filteredPopupItems.filter((item, idx, arr) =>
+    arr.findIndex(x => x.name1 === item.name1 && x.spec1 === item.spec1) === idx
+  )
+
+  const newRow = (): Row => ({
+    id: Math.random().toString(36).slice(2),
+    name1:'', name2:'', name3:'',
+    spec1:'', spec2:'', spec3:'',
+    quantity:'', unit:'', unit_price:'', amount:0,
+    note1:'', note2:'', note3:'',
+    showCandidates:false,
+    source_estimate_item_id: null
+  })
+
+  const addSection = (name: string) => {
+    if (!name.trim()) return
+    setSections(prev => [...prev, { id: Math.random().toString(36).slice(2), name, rows: [] }])
+    setCustomSection('')
+    setShowSectionInput(false)
+  }
+
+  const deleteSection = (id: string) => setSections(prev => prev.filter(s => s.id !== id))
+
+  const addRow = (sectionId: string, sectionName: string) => {
+    const row = newRow()
+    setSections(prev => prev.map(s =>
+      s.id === sectionId ? { ...s, rows: [...s.rows, row] } : s
+    ))
+    openPopup(sectionId, row.id, sectionName)
+  }
+
+  const deleteRow = (sectionId: string, rowId: string) => {
+    setSections(prev => prev.map(s =>
+      s.id === sectionId ? { ...s, rows: s.rows.filter(r => r.id !== rowId) } : s
+    ))
+  }
+
+  const updateRow = (sectionId: string, rowId: string, field: string, value: string) => {
+    setSections(prev => prev.map(s => {
+      if (s.id !== sectionId) return s
+      return {
+        ...s, rows: s.rows.map(r => {
+          if (r.id !== rowId) return r
+          const updated = { ...r, [field]: value }
+          const q = parseFloat(updated.quantity) || 0
+          const p = parseFloat(updated.unit_price) || 0
+          updated.amount = Math.round(q * p * 10) / 10
+          return updated
+        })
+      }
+    }))
+  }
+
+  const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
+  const grandTotal = sections.reduce((sum, s) => sum + subtotal(s), 0)
+
+  const handleExport = async () => {
+    if (!copyInfo) return
+    await saveDraft()
+    const res = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: '',
+        building: copyInfo.building,
+        title: '',
+        staff: copyInfo.staff,
+        work_type: copyInfo.work_type,
+        sections
+      })
+    })
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `copy_${copyInfo.building}_${copyInfo.staff}.xlsx`
+    a.click()
+  }
+
+  // ==================== history用計算 ====================
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
     if (filters.building && e.building !== filters.building) return false
@@ -228,9 +440,9 @@ export default function HistoryPage() {
     return { sectionItems, expenses, subtotal, total }
   }
 
-  const grandTotal = sectionNames.reduce((sum, name) => sum + getSectionData(name).total, 0)
+  const historyGrandTotal = sectionNames.reduce((sum, name) => sum + getSectionData(name).total, 0)
 
-  const handleExport = async () => {
+  const handleExportHistory = async () => {
     if (!selectedEstimate) return
     const exportSections = sectionNames.map(name => {
       const { sectionItems } = getSectionData(name)
@@ -272,6 +484,220 @@ export default function HistoryPage() {
     unit: '4%', price: '10%', amount: '11%', note: '16%',
   }
 
+  // ==================== estimate画面 ====================
+  if (showEstimate && copyInfo) {
+    return (
+      <main className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={() => { setShowEstimate(false); setSections([]) }}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium text-sm">
+              ← 戻る
+            </button>
+            <h1 className="text-xl font-bold text-gray-800">明細入力（コピー編集）</h1>
+            <span className="bg-orange-500 text-xs text-white px-2 py-0.5 rounded">コピー編集中</span>
+            <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
+          </div>
+
+          <div className="bg-white rounded p-3 mb-4 text-sm text-gray-600 flex gap-4 flex-wrap">
+            <span>📅 日付を入力してください</span>
+            <span>{copyInfo.building}</span>
+            <span className="font-medium">📝 件名を入力してください</span>
+            <span>{copyInfo.staff}</span>
+            <span>{copyInfo.work_type}</span>
+          </div>
+
+          {sections.map(section => (
+            <div key={section.id} className="mb-6">
+              <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
+                <h2 className="text-lg font-bold">{section.name}</h2>
+                <button onClick={() => deleteSection(section.id)} className="text-blue-200 hover:text-white text-sm">× 削除</button>
+              </div>
+              <div className="bg-white border border-t-0 rounded-b overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="p-2 text-left w-8"></th>
+                      <th className="p-2 text-left w-44">名称</th>
+                      <th className="p-2 text-left w-36">仕様</th>
+                      <th className="p-2 text-right w-16">数量</th>
+                      <th className="p-2 text-left w-16">単位</th>
+                      <th className="p-2 text-right w-20">単価</th>
+                      <th className="p-2 text-right w-22">金額</th>
+                      <th className="p-2 text-left w-28">備考</th>
+                      <th className="p-2 w-6"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {section.rows.map(row => (
+                      <tr key={row.id} className="border-t align-top">
+                        <td className="p-1 pt-2">
+                          <button
+                            onClick={() => openPopup(section.id, row.id, section.name)}
+                            className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
+                            title="品目選択">📋</button>
+                        </td>
+                        <td className="p-1">
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.name1} placeholder="名称1段目"
+                            onChange={e => handleNameInput(section.id, row.id, section.name, e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.name2} placeholder="名称2段目"
+                            onChange={e => updateRow(section.id, row.id, 'name2', e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1" value={row.name3} placeholder="名称3段目"
+                            onChange={e => updateRow(section.id, row.id, 'name3', e.target.value)} />
+                        </td>
+                        <td className="p-1">
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.spec1} placeholder="仕様1段目"
+                            onChange={e => updateRow(section.id, row.id, 'spec1', e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.spec2} placeholder="仕様2段目"
+                            onChange={e => updateRow(section.id, row.id, 'spec2', e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1" value={row.spec3} placeholder="仕様3段目"
+                            onChange={e => updateRow(section.id, row.id, 'spec3', e.target.value)} />
+                        </td>
+                        <td className="p-1">
+                          <input className="w-full border rounded px-2 py-1 text-right" value={row.quantity} type="number" step="0.1"
+                            onChange={e => updateRow(section.id, row.id, 'quantity', e.target.value)} />
+                        </td>
+                        <td className="p-1">
+                          <select className="w-full border rounded px-1 py-1 mb-1" value={row.unit}
+                            onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)}>
+                            <option value="">選択</option>
+                            {units.map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
+                          <input className="w-full border rounded px-2 py-1 text-xs" value={row.unit} placeholder="自由入力"
+                            onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)} />
+                        </td>
+                        <td className="p-1">
+                          <input className="w-full border rounded px-2 py-1 text-right" value={row.unit_price} type="number"
+                            onChange={e => updateRow(section.id, row.id, 'unit_price', e.target.value)} />
+                          {row.source_estimate_item_id && (
+                            <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
+                          )}
+                        </td>
+                        <td className="p-1 text-right pr-2 pt-2">{row.amount.toLocaleString()}</td>
+                        <td className="p-1">
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.note1} placeholder="備考1段目"
+                            onChange={e => updateRow(section.id, row.id, 'note1', e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1 mb-1" value={row.note2} placeholder="備考2段目"
+                            onChange={e => updateRow(section.id, row.id, 'note2', e.target.value)} />
+                          <input className="w-full border rounded px-2 py-1" value={row.note3} placeholder="備考3段目"
+                            onChange={e => updateRow(section.id, row.id, 'note3', e.target.value)} />
+                        </td>
+                        <td className="p-1 pt-2">
+                          <button onClick={() => deleteRow(section.id, row.id)} className="text-red-400 hover:text-red-600 text-lg">×</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="p-2 flex justify-between items-center border-t">
+                  <button onClick={() => addRow(section.id, section.name)} className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
+                  <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="mb-6">
+            {!showSectionInput ? (
+              <button onClick={() => setShowSectionInput(true)}
+                className="w-full border-2 border-dashed border-blue-300 text-blue-600 py-3 rounded-lg hover:bg-blue-50">
+                + 工事区分を追加
+              </button>
+            ) : (
+              <div className="bg-white rounded-lg border p-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">工事区分を選択または入力</p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {PRESET_SECTIONS.filter(p => !sections.find(s => s.name === p)).map(p => (
+                    <button key={p} onClick={() => addSection(p)}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm">{p}</button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input className="flex-1 border rounded px-3 py-2 text-sm" value={customSection} placeholder="その他（自由入力）"
+                    onChange={e => setCustomSection(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addSection(customSection)} />
+                  <button onClick={() => addSection(customSection)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">追加</button>
+                  <button onClick={() => setShowSectionInput(false)} className="text-gray-500 px-3 py-2 text-sm">キャンセル</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded p-4 flex justify-between items-center sticky bottom-4 shadow-lg">
+            <div className="text-xl font-bold">合計: {grandTotal.toLocaleString()} 円</div>
+            <div className="flex gap-3 items-center">
+              {savedMsg && <span className="text-sm" style={{color: savedMsg.includes('⚠️') ? 'red' : 'green'}}>{savedMsg}</span>}
+              <button onClick={saveDraft} disabled={saving}
+                className="bg-yellow-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-yellow-600 disabled:opacity-50">
+                {saving ? '保存中...' : '途中保存'}
+              </button>
+              <button onClick={handleExport}
+                className="bg-green-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-green-700">
+                Excelダウンロード
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {popup && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
+                <h3 className="text-white font-bold">品目選択 - {popup.workSection}</h3>
+                <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
+              </div>
+              <div className="p-3 border-b">
+                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="名称・仕様で絞り込み"
+                  value={popupSearch} onChange={e => setPopupSearch(e.target.value)} autoFocus />
+              </div>
+              <div className="overflow-y-auto flex-1">
+                {popupLoading ? (
+                  <div className="p-8 text-center text-gray-400">読み込み中...</div>
+                ) : uniquePopupItems.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400">
+                    {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
+                  </div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="p-2 text-left">名称</th>
+                        <th className="p-2 text-left">仕様</th>
+                        <th className="p-2 text-left w-12">単位</th>
+                        <th className="p-2 text-right w-20">単価</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uniquePopupItems.map(item => (
+                        <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
+                          onClick={() => selectPopupItem(item)}>
+                          <td className="p-2">
+                            <div>{item.name1}</div>
+                            {item.name2 && <div className="text-gray-400">{item.name2}</div>}
+                          </td>
+                          <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
+                          <td className="p-2">{item.unit}</td>
+                          <td className="p-2 text-right font-medium">
+                            {item.unit_price ? item.unit_price.toLocaleString() : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
+                {uniquePopupItems.length}件表示
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    )
+  }
+
+  // ==================== history画面 ====================
   return (
     <div style={is880 ? { maxWidth: '880px', margin: '0 auto' } : {}}>
       <main className="min-h-screen bg-gray-50">
@@ -320,7 +746,7 @@ export default function HistoryPage() {
             <option value="">年▼</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button onClick={handleExport}
+          <button onClick={handleExportHistory}
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
@@ -442,7 +868,7 @@ export default function HistoryPage() {
               {sectionNames.length > 0 && (
                 <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
                   <span className="text-lg font-bold">建築工事の計</span>
-                  <span className="text-xl font-bold">{fmt(grandTotal)} 円</span>
+                  <span className="text-xl font-bold">{fmt(historyGrandTotal)} 円</span>
                 </div>
               )}
             </>
