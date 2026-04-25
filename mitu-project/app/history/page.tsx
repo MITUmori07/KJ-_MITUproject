@@ -1,19 +1,17 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.0.3
+// バージョン: V4.0.4
 // 更新: 2026/04/25
-// 変更: コピー編集をトップ画面経由せず明細画面へ直接遷移
-//       sessionStorage廃止・drafts直接insert
+// 変更: コピー編集時にitemsを再fetchして確実に正しいデータを取得
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.0.3'
+const VERSION = 'V4.0.4'
 
-// work_type全角→半角正規化
 const normalizeWorkType = (wt: string) =>
   wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
 
@@ -117,24 +115,33 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  // ▼ V4.0.3修正: sessionStorage廃止・drafts直接insert・明細画面へ直接遷移
+  // ▼ V4.0.4修正: selectedEstimate.idで直接再fetch（staleなstate itemsを使わない）
   const handleCopyToEdit = async () => {
-    if (!selectedEstimate || items.length === 0) return
-    if (items[0].estimate_id !== selectedEstimate.id) {
-      alert('データ読込中です。少し待ってから押してください')
-      return
-    }
+    if (!selectedEstimate) return
     setCopying(true)
 
-    const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
-    const sectionNames = [...new Set(normalItems.map(i => i.work_section))]
+    const { data: freshItems } = await supabase
+      .from('estimate_items')
+      .select('*')
+      .eq('estimate_id', selectedEstimate.id)
+      .order('work_section', { ascending: true })
+      .order('row_order', { ascending: true })
 
-    const sections = sectionNames.map(name => ({
+    if (!freshItems || freshItems.length === 0) {
+      alert('明細データがありません')
+      setCopying(false)
+      return
+    }
+
+    const normalItems = freshItems.filter((i: EstimateItem) => !i.work_section.startsWith('経費_'))
+    const sectionNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))]
+
+    const sections = (sectionNames as string[]).map((name: string) => ({
       id: Math.random().toString(36).slice(2),
       name,
       rows: normalItems
-        .filter(i => i.work_section === name)
-        .map(item => ({
+        .filter((i: EstimateItem) => i.work_section === name)
+        .map((item: EstimateItem) => ({
           id: Math.random().toString(36).slice(2),
           name1: item.name1 || '',
           name2: item.name2 || '',
@@ -155,7 +162,6 @@ export default function HistoryPage() {
         }))
     }))
 
-    // draftsに直接insert（date・titleは空・コピーモード）
     const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
     const { data, error } = await supabase.from('drafts').insert({
       file_key,
@@ -176,7 +182,6 @@ export default function HistoryPage() {
 
     setCopying(false)
 
-    // 明細画面へ直接遷移（date・titleは空・draft_idあり→コピー編集モード）
     const p = new URLSearchParams({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
@@ -185,7 +190,7 @@ export default function HistoryPage() {
     })
     window.location.href = `/estimate?${p.toString()}`
   }
-  // ▲ V4.0.3修正ここまで
+  // ▲ V4.0.4修正ここまで
 
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
