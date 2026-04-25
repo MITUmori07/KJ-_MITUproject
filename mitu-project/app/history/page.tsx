@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.0.2
+// バージョン: V4.0.3
 // 更新: 2026/04/25
 // 変更: コピー編集をトップ画面経由せず明細画面へ直接遷移
 //       sessionStorage廃止・drafts直接insert
@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.0.2'
+const VERSION = 'V4.0.3'
 
 // work_type全角→半角正規化
 const normalizeWorkType = (wt: string) =>
@@ -117,7 +117,7 @@ export default function HistoryPage() {
     if (filtered.length > 0) loadItems(filtered[0])
   }
 
-  // ▼ V4.0.2修正: sessionStorage廃止・drafts直接insert・明細画面へ直接遷移
+  // ▼ V4.0.3修正: sessionStorage廃止・drafts直接insert・明細画面へ直接遷移
   const handleCopyToEdit = async () => {
     if (!selectedEstimate || items.length === 0) return
     if (items[0].estimate_id !== selectedEstimate.id) {
@@ -183,9 +183,9 @@ export default function HistoryPage() {
       work_type: normalizeWorkType(selectedEstimate.work_type),
       draft_id: String(data.id),
     })
-    router.push(`/estimate?${p.toString()}`)
+    window.location.href = `/estimate?${p.toString()}`
   }
-  // ▲ V4.0.2修正ここまで
+  // ▲ V4.0.3修正ここまで
 
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
