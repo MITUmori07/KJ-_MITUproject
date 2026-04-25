@@ -1,9 +1,21 @@
+// ============================================================
+// ディレクトリ: mitu-project/app/history/
+// ファイル名: page.tsx
+// バージョン: V4.0.2
+// 更新: 2026/04/25
+// 変更: コピー編集をトップ画面経由せず明細画面へ直接遷移
+//       sessionStorage廃止・drafts直接insert
+// ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'v0.3.6'
+const VERSION = 'V4.0.2'
+
+// work_type全角→半角正規化
+const normalizeWorkType = (wt: string) =>
+  wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
 
 type Estimate = {
   id: number
@@ -93,8 +105,25 @@ export default function HistoryPage() {
     setShowTitleList(false)
   }
 
-  const handleCopyToEdit = () => {
+  const handleFilterChange = (newFilters: Filters) => {
+    setFilters(newFilters)
+    const filtered = estimates.filter(e => {
+      if (newFilters.staff && e.staff !== newFilters.staff) return false
+      if (newFilters.building && e.building !== newFilters.building) return false
+      if (newFilters.workType && e.work_type !== newFilters.workType) return false
+      if (newFilters.year && !e.date.startsWith(newFilters.year)) return false
+      return true
+    })
+    if (filtered.length > 0) loadItems(filtered[0])
+  }
+
+  // ▼ V4.0.2修正: sessionStorage廃止・drafts直接insert・明細画面へ直接遷移
+  const handleCopyToEdit = async () => {
     if (!selectedEstimate || items.length === 0) return
+    if (items[0].estimate_id !== selectedEstimate.id) {
+      alert('データ読込中です。少し待ってから押してください')
+      return
+    }
     setCopying(true)
 
     const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
@@ -126,32 +155,37 @@ export default function HistoryPage() {
         }))
     }))
 
-    // sessionStorageに一時保持(Supabase drafts insertはトップ画面で行う)
-    try {
-      sessionStorage.setItem('kjm_copy_draft', JSON.stringify({
-        sections,
-        building: selectedEstimate.building,
-        staff: selectedEstimate.staff,
-        work_type: selectedEstimate.work_type,
-        source_estimate_id: selectedEstimate.id,
-      }))
-    } catch (e) {
+    // draftsに直接insert（date・titleは空・コピーモード）
+    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
+    const { data, error } = await supabase.from('drafts').insert({
+      file_key,
+      date: '',
+      building: selectedEstimate.building,
+      title: '',
+      staff: selectedEstimate.staff,
+      work_type: normalizeWorkType(selectedEstimate.work_type),
+      sections,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
+
+    if (error || !data) {
+      alert('コピー保存に失敗しました')
       setCopying(false)
-      alert('コピーデータの一時保存に失敗しました')
       return
     }
 
     setCopying(false)
 
-    // トップページへ遷移(mode=copy、draft_idは付けない)
-    const params = new URLSearchParams({
+    // 明細画面へ直接遷移（date・titleは空・draft_idあり→コピー編集モード）
+    const p = new URLSearchParams({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
-      work_type: selectedEstimate.work_type,
-      mode: 'copy',
+      work_type: normalizeWorkType(selectedEstimate.work_type),
+      draft_id: String(data.id),
     })
-    router.push(`/?${params.toString()}`)
+    router.push(`/estimate?${p.toString()}`)
   }
+  // ▲ V4.0.2修正ここまで
 
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
@@ -262,22 +296,22 @@ export default function HistoryPage() {
             )}
           </div>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
-            onChange={e => setFilters({ ...filters, staff: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, staff: e.target.value })}>
             <option value="">担当者▼</option>
             {staffList.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
-            onChange={e => setFilters({ ...filters, building: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, building: e.target.value })}>
             <option value="">ビル名▼</option>
             {buildings.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
-            onChange={e => setFilters({ ...filters, workType: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, workType: e.target.value })}>
             <option value="">種別▼</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
           <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
-            onChange={e => setFilters({ ...filters, year: e.target.value })}>
+            onChange={e => handleFilterChange({ ...filters, year: e.target.value })}>
             <option value="">年▼</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -285,9 +319,9 @@ export default function HistoryPage() {
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
             Excel
           </button>
-          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate}
+          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate || loading}
             className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
-            {copying ? '準備中...' : 'コピー編集'}
+            {copying || loading ? '読込中...' : 'コピー編集'}
           </button>
           <button onClick={() => setIs880(!is880)}
             style={{
@@ -301,7 +335,7 @@ export default function HistoryPage() {
             880
           </button>
           <button onClick={resetFilters}
-            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded text-xs font-bold hover:bg-orange-600 whitespace-nowrap">
+            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap">
             ←
           </button>
         </div>
