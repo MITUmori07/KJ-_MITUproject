@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V5.0.2
+// バージョン: V5.0.3
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V5.0.2'
+const VERSION = 'V5.0.3'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -762,21 +762,22 @@ export default function HistoryPage() {
   // ==================== estimate画面 ====================
   if (showEstimate && copyInfo) {
     return (
-      <main className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-3 mb-4">
+      <main className="min-h-screen bg-gray-50">
+        {/* ▼ V5.0.3: 3行固定ヘッダー */}
+        <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
+          {/* 1行目: 戻る・タイトル・バージョン */}
+          <div className="flex items-center gap-2 px-2 py-1">
             <button
               onClick={() => { setShowEstimate(false); setSections([]) }}
-              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium text-sm">
+              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs">
               ← 戻る
             </button>
-            <h1 className="text-xl font-bold text-gray-800">明細入力（コピー編集）</h1>
+            <span className="text-sm font-bold text-gray-800">明細入力</span>
             <span className="bg-orange-500 text-xs text-white px-2 py-0.5 rounded">コピー編集中</span>
             <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
           </div>
-
-          {/* ▼ V5.0.2: 案件情報コンパクト化・1行 */}
-          <div className="bg-white rounded px-2 py-2 mb-2 flex flex-wrap gap-1 items-end">
+          {/* 2行目: 案件情報入力 */}
+          <div className="px-2 pb-1 flex flex-wrap gap-1 items-end border-t">
             <div className="flex flex-col gap-0.5">
               <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
               <input type="date" className="border rounded px-1 py-0.5 text-xs w-32"
@@ -813,8 +814,24 @@ export default function HistoryPage() {
               </select>
             </div>
           </div>
+          {/* 3行目: 合計・ボタン */}
+          <div className="px-2 py-1 flex items-center gap-2 border-t">
+            <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
+            <div className="ml-auto flex gap-2 items-center">
+              {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
+              <button onClick={saveDraft} disabled={saving}
+                className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50">
+                {saving ? '保存中...' : '途中保存'}
+              </button>
+              <button onClick={handleExport}
+                className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700">
+                Excel出力
+              </button>
+            </div>
+          </div>
+        </div>
 
-          {sections.map(section => (
+        <div className="max-w-6xl mx-auto p-4">
             <div key={section.id} className="mb-6">
               <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
                 <h2 className="text-lg font-bold">{section.name}</h2>
@@ -952,21 +969,7 @@ export default function HistoryPage() {
             )}
           </div>
 
-          {/* ▼ V5.0.2: 合計・ボタンコンパクト化・sticky廃止 */}
-          <div className="bg-white rounded px-3 py-2 flex items-center gap-2 mb-4">
-            <div className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</div>
-            <div className="ml-auto flex gap-2 items-center">
-              {savedMsg && <span className="text-xs" style={{color: 'green'}}>{savedMsg}</span>}
-              <button onClick={saveDraft} disabled={saving}
-                className="bg-yellow-500 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50">
-                {saving ? '保存中...' : '途中保存'}
-              </button>
-              <button onClick={handleExport}
-                className="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-green-700">
-                Excel出力
-              </button>
-            </div>
-          </div>
+          {/* ▼ V5.0.3: フッター廃止（ヘッダーに移動済み） */}
         </div>
 
         {popup && (
