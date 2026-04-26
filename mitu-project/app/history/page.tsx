@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.6
+// バージョン: V5.0.1
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.6'
+const VERSION = 'V5.0.1'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -92,6 +92,8 @@ type CopyInfo = {
   staff: string
   work_type: string
   draft_id: number
+  date: string
+  title: string
 }
 
 const t = (str: string | null | undefined, len: number) => (str || '').slice(0, len)
@@ -255,6 +257,8 @@ export default function HistoryPage() {
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
       draft_id: data.id,
+      date: '',
+      title: '',
     })
     setCopying(false)
     setShowEstimate(true)
@@ -296,12 +300,15 @@ export default function HistoryPage() {
     const sectionsToSave = sections.map(s => ({
       ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false }))
     }))
+    const file_key = copyInfo.date && copyInfo.title
+      ? `${copyInfo.date}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}`
+      : `copy_未入力_${copyInfo.draft_id}`
     await supabase.from('drafts').upsert({
       id: copyInfo.draft_id,
-      file_key: `copy_${copyInfo.draft_id}`,
-      date: '',
+      file_key,
+      date: copyInfo.date,
       building: copyInfo.building,
-      title: '',
+      title: copyInfo.title || 'コピー未入力',
       staff: copyInfo.staff,
       work_type: copyInfo.work_type,
       sections: sectionsToSave,
@@ -768,13 +775,43 @@ export default function HistoryPage() {
             <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
           </div>
 
-          {/* ▼ V4.2.1修正: 解体なし時に件名が出るバグ修正 → copyInfoのみ表示 */}
-          <div className="bg-white rounded p-3 mb-4 text-sm text-gray-600 flex gap-4 flex-wrap">
-            <span>📅 日付を入力してください</span>
-            <span>{copyInfo.building}</span>
-            <span className="font-medium">📝 件名を入力してください</span>
-            <span>{copyInfo.staff}</span>
-            <span>{copyInfo.work_type}</span>
+          {/* ▼ V5.0.1: 案件情報インライン入力 */}
+          <div className="bg-white rounded p-3 mb-4 flex flex-wrap gap-2 items-center">
+            <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
+              <label className="text-xs text-gray-500">日付 <span className="text-red-400">※必須</span></label>
+              <input type="date" className="border rounded px-2 py-1 text-sm"
+                value={copyInfo.date}
+                onChange={e => setCopyInfo({...copyInfo, date: e.target.value})} />
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+              <label className="text-xs text-gray-500">ビル名</label>
+              <select className="border rounded px-2 py-1 text-sm"
+                value={copyInfo.building}
+                onChange={e => setCopyInfo({...copyInfo, building: e.target.value})}>
+                {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+              <label className="text-xs text-gray-500">件名 <span className="text-red-400">※必須</span></label>
+              <input type="text" className="border rounded px-2 py-1 text-sm"
+                value={copyInfo.title}
+                placeholder="件名を入力"
+                onChange={e => setCopyInfo({...copyInfo, title: e.target.value})} />
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-[90px]">
+              <label className="text-xs text-gray-500">担当者</label>
+              <input type="text" className="border rounded px-2 py-1 text-sm"
+                value={copyInfo.staff}
+                onChange={e => setCopyInfo({...copyInfo, staff: e.target.value})} />
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-[90px]">
+              <label className="text-xs text-gray-500">工事種別</label>
+              <select className="border rounded px-2 py-1 text-sm"
+                value={copyInfo.work_type}
+                onChange={e => setCopyInfo({...copyInfo, work_type: e.target.value})}>
+                {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            </div>
           </div>
 
           {sections.map(section => (
