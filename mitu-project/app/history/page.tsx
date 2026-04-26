@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V5.0.4
+// バージョン: V5.0.5
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V5.0.4'
+const VERSION = 'V5.0.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -531,14 +531,34 @@ export default function HistoryPage() {
 
   const handleExport = async () => {
     if (!copyInfo) return
+    if (copying) {
+      alert('データ読み込み中です。少し待ってください')
+      return
+    }
+    if (sections.length === 0 || sections.every(s => s.rows.length === 0)) {
+      alert('明細データがありません')
+      return
+    }
+    if (!copyInfo.date && !copyInfo.title) {
+      alert('日付と件名を入力してください')
+      return
+    }
+    if (!copyInfo.date) {
+      alert('日付を入力してください')
+      return
+    }
+    if (!copyInfo.title) {
+      alert('件名を入力してください')
+      return
+    }
     await saveDraft()
     const res = await fetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        date: '',
+        date: copyInfo.date,
         building: copyInfo.building,
-        title: '',
+        title: copyInfo.title,
         staff: copyInfo.staff,
         work_type: copyInfo.work_type,
         sections
@@ -548,7 +568,8 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `copy_${copyInfo.building}_${copyInfo.staff}.xlsx`
+    const dateStr = copyInfo.date.replace(/-/g,'')
+    a.download = `${dateStr}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
     a.click()
   }
 
