@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.1
+// バージョン: V4.2.2
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.1'
+const VERSION = 'V4.2.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -921,81 +921,43 @@ export default function HistoryPage() {
                   </select>
                 </div>
               )}
-              <div className="p-3 border-b">
-                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="名称・仕様で絞り込み"
-                  value={popupSearch} onChange={e => setPopupSearch(e.target.value)} autoFocus />
-              </div>
-              <div className="overflow-y-auto flex-1">
+              <div className="p-4 flex-1">
                 {popupLoading ? (
                   <div className="p-8 text-center text-gray-400">読み込み中...</div>
                 ) : popupTab === 'history' ? (
                   uniquePopupItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400">
-                      {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
-                    </div>
+                    <div className="p-8 text-center text-gray-400">このカテゴリの品目データがありません</div>
                   ) : (
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="p-2 text-left">名称</th>
-                          <th className="p-2 text-left">仕様</th>
-                          <th className="p-2 text-left w-12">単位</th>
-                          <th className="p-2 text-right w-20">単価</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {uniquePopupItems.map(item => (
-                          <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
-                            onClick={() => selectPopupItem(item)}>
-                            <td className="p-2">
-                              <div>{item.name1}</div>
-                              {item.name2 && <div className="text-gray-400">{item.name2}</div>}
-                            </td>
-                            <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
-                            <td className="p-2">{item.unit}</td>
-                            <td className="p-2 text-right font-medium">
-                              {item.unit_price ? item.unit_price.toLocaleString() : '-'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <select size={10} className="w-full border rounded text-sm"
+                      onChange={e => {
+                        const item = uniquePopupItems[Number(e.target.value)]
+                        if (item) selectPopupItem(item)
+                      }}>
+                      {uniquePopupItems.map((item, idx) => (
+                        <option key={item.id} value={idx}>
+                          {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{item.unit_price ? ` / ${item.unit_price.toLocaleString()}円` : ''}
+                        </option>
+                      ))}
+                    </select>
                   )
                 ) : (
                   filteredMasterItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400">
-                      {popupSearch ? '該当する品目がありません' : '品目データがありません'}
-                    </div>
+                    <div className="p-8 text-center text-gray-400">品目データがありません</div>
                   ) : (
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="p-2 text-left">名称</th>
-                          <th className="p-2 text-left">仕様</th>
-                          <th className="p-2 text-left w-12">単位</th>
-                          <th className="p-2 text-right w-24">{fiscalYear}年度単価</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMasterItems.map(item => {
-                          const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
-                          return (
-                            <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
-                              onClick={() => selectMasterItem(item)}>
-                              <td className="p-2">
-                                <div>{item.name1}</div>
-                                {item.name2 && <div className="text-gray-400">{item.name2}</div>}
-                              </td>
-                              <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
-                              <td className="p-2">{item.unit}</td>
-                              <td className="p-2 text-right font-medium">
-                                {priceObj ? priceObj.price1.toLocaleString() : '-'}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                    <select size={10} className="w-full border rounded text-sm"
+                      onChange={e => {
+                        const item = filteredMasterItems[Number(e.target.value)]
+                        if (item) selectMasterItem(item)
+                      }}>
+                      {filteredMasterItems.map((item, idx) => {
+                        const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
+                        return (
+                          <option key={item.id} value={idx}>
+                            {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{priceObj ? ` / ${priceObj.price1.toLocaleString()}円` : ''}
+                          </option>
+                        )
+                      })}
+                    </select>
                   )
                 )}
               </div>
