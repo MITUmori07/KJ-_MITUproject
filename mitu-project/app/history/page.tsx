@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.2
+// バージョン: V4.2.3
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.2'
+const VERSION = 'V4.2.3'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -111,6 +111,7 @@ export default function HistoryPage() {
 
   const [showEstimate, setShowEstimate] = useState(false)
   const [copyInfo, setCopyInfo] = useState<CopyInfo | null>(null)
+  const [copyItems, setCopyItems] = useState<EstimateItem[]>([])
 
   const [sections, setSections] = useState<Section[]>([])
   const [customSection, setCustomSection] = useState('')
@@ -247,6 +248,7 @@ export default function HistoryPage() {
     }
 
     setSections(newSections)
+    setCopyItems(freshItems)
     setCopyInfo({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
@@ -309,20 +311,29 @@ export default function HistoryPage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  // ▼ V4.2.1修正: ポップアップをopen時に即データロード
-  const openPopup = async (sectionId: string, rowId: string, sectionName: string) => {
+  // ▼ V4.2.3修正: Supabase再取得→取得済みcopyItemsから絞り込み
+  const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
     setPopupTab('history')
-    setPopupItems([])
-    setPopupLoading(true)
-    const { data } = await supabase
-      .from('estimate_items')
-      .select('id,name1,name2,name3,spec1,spec2,spec3,unit,unit_price,note1,note2,note3,estimate_id')
-      .eq('work_section', sectionName)
-      .not('name1', 'is', null)
-      .order('name1')
-    setPopupItems(data || [])
+    const filtered = copyItems
+      .filter(i => i.work_section === sectionName && i.name1)
+      .map(i => ({
+        id: i.id,
+        name1: i.name1,
+        name2: i.name2,
+        name3: i.name3,
+        spec1: i.spec1,
+        spec2: i.spec2,
+        spec3: i.spec3,
+        unit: i.unit,
+        unit_price: i.unit_price,
+        note1: i.note1,
+        note2: i.note2,
+        note3: i.note3,
+        estimate_id: i.estimate_id,
+      }))
+    setPopupItems(filtered)
     setPopupLoading(false)
   }
 
