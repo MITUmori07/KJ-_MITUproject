@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V5.0.3
+// バージョン: V5.0.4
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V5.0.3'
+const VERSION = 'V5.0.4'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -832,6 +832,7 @@ export default function HistoryPage() {
         </div>
 
         <div className="max-w-6xl mx-auto p-4">
+          {sections.map(section => (
             <div key={section.id} className="mb-6">
               <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
                 <h2 className="text-lg font-bold">{section.name}</h2>
