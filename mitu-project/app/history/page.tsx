@@ -131,6 +131,7 @@ export default function HistoryPage() {
   const [popupSearch, setPopupSearch] = useState('')
   const [fiscalYear, setFiscalYear] = useState<number>(2026)
   const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
+  const [currentRowName, setCurrentRowName] = useState('')
 
   useEffect(() => {
     loadEstimates()
@@ -311,11 +312,15 @@ export default function HistoryPage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  // ▼ V4.2.4修正: useRefで即時反映
+  // ▼ V4.2.6修正: openPopup時にsectionsから直接name1を取得
   const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
     setPopupTab('history')
+    // sectionsは既にstateにある→直接読める
+    const section = sections.find(s => s.id === sectionId)
+    const row = section?.rows.find(r => r.id === rowId)
+    setCurrentRowName(row?.name1 || '')
     const filtered = copyItemsRef.current
       .filter(i => i.work_section === sectionName && i.name1)
       .map(i => ({
