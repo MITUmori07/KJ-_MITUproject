@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.3
+// バージョン: V4.2.4
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
 // ============================================================
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.3'
+const VERSION = 'V4.2.4'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -111,7 +111,7 @@ export default function HistoryPage() {
 
   const [showEstimate, setShowEstimate] = useState(false)
   const [copyInfo, setCopyInfo] = useState<CopyInfo | null>(null)
-  const [copyItems, setCopyItems] = useState<EstimateItem[]>([])
+  const copyItemsRef = useRef<EstimateItem[]>([])
 
   const [sections, setSections] = useState<Section[]>([])
   const [customSection, setCustomSection] = useState('')
@@ -248,7 +248,7 @@ export default function HistoryPage() {
     }
 
     setSections(newSections)
-    setCopyItems(freshItems)
+    copyItemsRef.current = freshItems
     setCopyInfo({
       building: selectedEstimate.building,
       staff: selectedEstimate.staff,
@@ -311,12 +311,12 @@ export default function HistoryPage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  // ▼ V4.2.3修正: Supabase再取得→取得済みcopyItemsから絞り込み
+  // ▼ V4.2.4修正: useRefで即時反映
   const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
     setPopupTab('history')
-    const filtered = copyItems
+    const filtered = copyItemsRef.current
       .filter(i => i.work_section === sectionName && i.name1)
       .map(i => ({
         id: i.id,
