@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.5
+// バージョン: V4.2.6
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.5'
+const VERSION = 'V4.2.6'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -362,15 +362,6 @@ export default function HistoryPage() {
     rowId: string,
     sectionName: string
   ) => {
-    // 現在の行のname1を確認
-    let currentName = ''
-    setSections(prev => {
-      const section = prev.find(s => s.id === sectionId)
-      const row = section?.rows.find(r => r.id === rowId)
-      currentName = row?.name1 || ''
-      return prev
-    })
-
     const doOverwrite = () => {
       setSections(prev => prev.map(s => {
         if (s.id !== sectionId) return s
@@ -396,7 +387,8 @@ export default function HistoryPage() {
       setPopup(null)
     }
 
-    if (currentName) {
+    // openPopup時に取得したcurrentRowNameを使う
+    if (currentRowName) {
       const choice = window.confirm('書き換えますか？\nOK = 書き換え　キャンセル = 下に追加')
       if (choice) {
         doOverwrite()
