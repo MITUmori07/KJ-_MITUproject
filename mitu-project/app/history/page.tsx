@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V4.2.4
+// バージョン: V4.2.5
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V4.2.4'
+const VERSION = 'V4.2.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -351,53 +351,83 @@ export default function HistoryPage() {
     }
   }
 
+  const applyItemToRow = (
+    newData: Partial<Row>,
+    sectionId: string,
+    rowId: string,
+    sectionName: string
+  ) => {
+    // 現在の行のname1を確認
+    let currentName = ''
+    setSections(prev => {
+      const section = prev.find(s => s.id === sectionId)
+      const row = section?.rows.find(r => r.id === rowId)
+      currentName = row?.name1 || ''
+      return prev
+    })
+
+    const doOverwrite = () => {
+      setSections(prev => prev.map(s => {
+        if (s.id !== sectionId) return s
+        return {
+          ...s, rows: s.rows.map(r => {
+            if (r.id !== rowId) return r
+            return { ...r, ...newData, amount: 0, showCandidates: false }
+          })
+        }
+      }))
+      setPopup(null)
+    }
+
+    const doInsert = () => {
+      const row = { ...newRow(), ...newData, amount: 0 }
+      setSections(prev => prev.map(s => {
+        if (s.id !== sectionId) return s
+        const idx = s.rows.findIndex(r => r.id === rowId)
+        const newRows = [...s.rows]
+        newRows.splice(idx + 1, 0, row)
+        return { ...s, rows: newRows }
+      }))
+      setPopup(null)
+    }
+
+    if (currentName) {
+      const choice = window.confirm('書き換えますか？\nOK = 書き換え　キャンセル = 下に追加')
+      if (choice) {
+        doOverwrite()
+      } else {
+        doInsert()
+      }
+    } else {
+      doOverwrite()
+    }
+  }
+
   const selectPopupItem = (item: PopupItem) => {
     if (!popup) return
-    setSections(prev => prev.map(s => {
-      if (s.id !== popup.sectionId) return s
-      return {
-        ...s, rows: s.rows.map(r => {
-          if (r.id !== popup.rowId) return r
-          return {
-            ...r,
-            name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
-            spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
-            unit: item.unit || '',
-            unit_price: item.unit_price?.toString() || '',
-            amount: 0,
-            note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
-            source_estimate_item_id: item.id,
-            showCandidates: false
-          }
-        })
-      }
-    }))
-    setPopup(null)
+    const newData: Partial<Row> = {
+      name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+      spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+      unit: item.unit || '',
+      unit_price: item.unit_price?.toString() || '',
+      note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
+      source_estimate_item_id: item.id,
+    }
+    applyItemToRow(newData, popup.sectionId, popup.rowId, popup.workSection)
   }
 
   const selectMasterItem = (item: MasterItem) => {
     if (!popup) return
     const priceObj = item.item_prices?.find(p => p.fiscal_year === fiscalYear) || item.item_prices?.[0]
     const unit_price = priceObj?.price1?.toString() || ''
-    setSections(prev => prev.map(s => {
-      if (s.id !== popup.sectionId) return s
-      return {
-        ...s, rows: s.rows.map(r => {
-          if (r.id !== popup.rowId) return r
-          return {
-            ...r,
-            name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
-            spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
-            unit: item.unit || '', unit_price,
-            amount: 0,
-            note1: '', note2: '', note3: '',
-            source_estimate_item_id: null,
-            showCandidates: false
-          }
-        })
-      }
-    }))
-    setPopup(null)
+    const newData: Partial<Row> = {
+      name1: item.name1 || '', name2: item.name2 || '', name3: item.name3 || '',
+      spec1: item.spec1 || '', spec2: item.spec2 || '', spec3: item.spec3 || '',
+      unit: item.unit || '', unit_price,
+      note1: '', note2: '', note3: '',
+      source_estimate_item_id: null,
+    }
+    applyItemToRow(newData, popup.sectionId, popup.rowId, popup.workSection)
   }
 
   const filteredPopupItems = popupItems.filter(item => {
