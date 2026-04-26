@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V5.0.1
+// バージョン: V5.0.2
 // 更新: 2026/04/25
 // 変更: ポップアップタブ表示修正・年度選択修正・
 //       解体なし時件名表示バグ修正・工事区分削除アラート追加
@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V5.0.1'
+const VERSION = 'V5.0.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -775,38 +775,38 @@ export default function HistoryPage() {
             <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
           </div>
 
-          {/* ▼ V5.0.1: 案件情報インライン入力 */}
-          <div className="bg-white rounded p-3 mb-4 flex flex-wrap gap-2 items-center">
-            <div className="flex flex-col gap-1 flex-1 min-w-[130px]">
-              <label className="text-xs text-gray-500">日付 <span className="text-red-400">※必須</span></label>
-              <input type="date" className="border rounded px-2 py-1 text-sm"
+          {/* ▼ V5.0.2: 案件情報コンパクト化・1行 */}
+          <div className="bg-white rounded px-2 py-2 mb-2 flex flex-wrap gap-1 items-end">
+            <div className="flex flex-col gap-0.5">
+              <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
+              <input type="date" className="border rounded px-1 py-0.5 text-xs w-32"
                 value={copyInfo.date}
                 onChange={e => setCopyInfo({...copyInfo, date: e.target.value})} />
             </div>
-            <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-              <label className="text-xs text-gray-500">ビル名</label>
-              <select className="border rounded px-2 py-1 text-sm"
+            <div className="flex flex-col gap-0.5">
+              <label className="text-xs text-gray-400">ビル名</label>
+              <select className="border rounded px-1 py-0.5 text-xs w-24"
                 value={copyInfo.building}
                 onChange={e => setCopyInfo({...copyInfo, building: e.target.value})}>
                 {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-              <label className="text-xs text-gray-500">件名 <span className="text-red-400">※必須</span></label>
-              <input type="text" className="border rounded px-2 py-1 text-sm"
+            <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
+              <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
+              <input type="text" className="border rounded px-1 py-0.5 text-xs w-full"
                 value={copyInfo.title}
                 placeholder="件名を入力"
                 onChange={e => setCopyInfo({...copyInfo, title: e.target.value})} />
             </div>
-            <div className="flex flex-col gap-1 flex-1 min-w-[90px]">
-              <label className="text-xs text-gray-500">担当者</label>
-              <input type="text" className="border rounded px-2 py-1 text-sm"
+            <div className="flex flex-col gap-0.5">
+              <label className="text-xs text-gray-400">担当者</label>
+              <input type="text" className="border rounded px-1 py-0.5 text-xs w-16"
                 value={copyInfo.staff}
                 onChange={e => setCopyInfo({...copyInfo, staff: e.target.value})} />
             </div>
-            <div className="flex flex-col gap-1 flex-1 min-w-[90px]">
-              <label className="text-xs text-gray-500">工事種別</label>
-              <select className="border rounded px-2 py-1 text-sm"
+            <div className="flex flex-col gap-0.5">
+              <label className="text-xs text-gray-400">種別</label>
+              <select className="border rounded px-1 py-0.5 text-xs w-20"
                 value={copyInfo.work_type}
                 onChange={e => setCopyInfo({...copyInfo, work_type: e.target.value})}>
                 {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
@@ -952,17 +952,18 @@ export default function HistoryPage() {
             )}
           </div>
 
-          <div className="bg-white rounded p-4 flex justify-between items-center sticky bottom-4 shadow-lg">
-            <div className="text-xl font-bold">合計: {grandTotal.toLocaleString()} 円</div>
-            <div className="flex gap-3 items-center">
-              {savedMsg && <span className="text-sm" style={{color: 'green'}}>{savedMsg}</span>}
+          {/* ▼ V5.0.2: 合計・ボタンコンパクト化・sticky廃止 */}
+          <div className="bg-white rounded px-3 py-2 flex items-center gap-2 mb-4">
+            <div className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</div>
+            <div className="ml-auto flex gap-2 items-center">
+              {savedMsg && <span className="text-xs" style={{color: 'green'}}>{savedMsg}</span>}
               <button onClick={saveDraft} disabled={saving}
-                className="bg-yellow-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-yellow-600 disabled:opacity-50">
+                className="bg-yellow-500 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50">
                 {saving ? '保存中...' : '途中保存'}
               </button>
               <button onClick={handleExport}
-                className="bg-green-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-green-700">
-                Excelダウンロード
+                className="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-green-700">
+                Excel出力
               </button>
             </div>
           </div>
