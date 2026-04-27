@@ -1,21 +1,18 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.0
+// バージョン: V1.0.1
 // 更新: 2026/04/27
-// 変更: 新規作成 Excelインポート画面
+// 変更: V1.0.1 経費・小計行取り込み対応・ファイル名パース修正
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.0'
+const VERSION = 'V1.0.1'
 
-// 経費行・スキップ行の判定
-const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費','小計']
-const isExpenseRow = (name: string) =>
-  EXPENSE_NAMES.some(e => (name || '').includes(e))
+// スキップ行の判定
 const isSectionTotal = (d: string) =>
   (d || '').includes('の計') || (d || '').includes('建築工事')
 const isPageNum = (note: string) =>
@@ -41,7 +38,7 @@ const parseFileName = (name: string) => {
   const building = parts[1] || ''
   const staff = parts[parts.length - 2] || ''
   const workType = parts[parts.length - 1] || ''
-  const title = parts.slice(2, parts.length - 2).join('_')
+  const title = parts.slice(2, parts.length - 2).join('')
   return { date, building, title, staff, work_type: workType }
 }
 
@@ -115,8 +112,28 @@ export default function ImportPage() {
           continue
         }
 
-        // 経費行スキップ
-        if (isExpenseRow(c)) continue
+        // 小計・経費行（仮設工事費・運搬費・深夜・現場経費・小計）
+        const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
+        const isExpense = EXPENSE_NAMES.some(e => c.includes(e))
+        const isSubtotal = d === '小計'
+        if ((isExpense || isSubtotal) && currentSection) {
+          const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
+          rowOrder++
+          parsed.push({
+            rowNum: i + 1,
+            work_section: `経費_${currentSection}`,
+            name1: c, name2: '', name3: '',
+            spec1: '', spec2: '', spec3: '',
+            quantity: e !== null ? String(Number(e)) : '1',
+            unit: f || '式',
+            unit_price: g !== null ? String(Number(g)) : '',
+            amount,
+            note1: '', note2: '', note3: '',
+            warning: false,
+            warningMsg: '',
+          })
+          continue
+        }
 
         // データ行
         if (c) {
