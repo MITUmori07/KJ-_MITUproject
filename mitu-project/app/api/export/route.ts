@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.5
+// バージョン: V6.0.6
 // 更新: 2026/04/27
 // 変更: ⑧印刷設定追加（列幅に印刷・29行毎改ページ）
 // ============================================================
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
     addPageNum()
   })
 
-  // ▼ V6.0.5: ⑧ 印刷設定
+  // ▼ V6.0.6: ⑧ 印刷設定
   // 列幅に印刷（fitToPage）
   ws.pageSetup.fitToPage = true
   ws.pageSetup.fitToWidth = 1
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
   // 29行毎に改ページ（ExcelJS正式API: row.pageBreak）
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
-    ws.getRow(br).pageBreak = true
+    ws.getRow(br).addPageBreak()
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer()
