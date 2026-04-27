@@ -1,20 +1,22 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.1
+// バージョン: V1.0.2
 // 更新: 2026/04/27
-// 変更: V1.0.1 経費・小計行取り込み対応・ファイル名パース修正
+// 変更: V1.0.2 小計・経費バグ修正・マッチング確認機能追加
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.1'
+const VERSION = 'V1.0.2'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
   (d || '').includes('の計') || (d || '').includes('建築工事')
+const isSectionTotalRow = (c: string, d: string) =>
+  isSectionTotal(d) || isSectionTotal(c)
 const isPageNum = (note: string) =>
   /^P\.\s*\d+/.test(note || '')
 const isHeaderRow = (name: string) =>
@@ -53,6 +55,14 @@ type PreviewRow = {
   warningMsg: string
 }
 
+// マッチング: Excelの工事区分合計
+type SectionMatch = {
+  name: string
+  excelTotal: number  // Excelの「〇〇の計」
+  calcTotal: number   // 取り込みデータの合計
+  matched: boolean
+}
+
 type HeaderInfo = {
   date: string; building: string; title: string
   staff: string; work_type: string
@@ -68,6 +78,7 @@ export default function ImportPage() {
   const [importing, setImporting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [doneMsg, setDoneMsg] = useState('')
+  const [sectionMatches, setSectionMatches] = useState<SectionMatch[]>([])
 
   const handleFile = async (file: File) => {
     setErrorMsg('')
@@ -82,6 +93,7 @@ export default function ImportPage() {
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
 
       const parsed: PreviewRow[] = []
+      const excelTotals: Record<string, number> = {}
       let currentSection = ''
       let rowOrder = 0
 
@@ -100,10 +112,8 @@ export default function ImportPage() {
         if (isPageNum(ii) && !c) continue
         // ヘッダー行スキップ
         if (isHeaderRow(c)) continue
-        // 合計行スキップ
-        if (isSectionTotal(d)) continue
         // 空行スキップ
-        if (!c && !d && !e && !g) continue
+        if (!c && !d && !e && !g && !h) continue
 
         // 工事区分ヘッダー（B列が数字でC列に名称、数量なし）
         if (typeof b === 'number' && c && !e && !g) {
@@ -112,21 +122,30 @@ export default function ImportPage() {
           continue
         }
 
+        // 合計行: Excelの「〇〇の計」→ マッチング用に記録してスキップ
+        if (isSectionTotalRow(c, d) && currentSection && h !== null) {
+          excelTotals[currentSection] = Math.round(Number(h))
+          continue
+        }
+
         // 小計・経費行（仮設工事費・運搬費・深夜・現場経費・小計）
         const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
         const isExpense = EXPENSE_NAMES.some(e => c.includes(e))
-        const isSubtotal = d === '小計'
+        const isSubtotal = d === '小計' && !c
         if ((isExpense || isSubtotal) && currentSection) {
+          // 金額: G列（単価）が空の場合はH列（金額）を直接使う
           const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
+          const unitPrice = g !== null && g !== undefined ? Number(g) : amount
+          const name = isSubtotal ? '小計' : c
           rowOrder++
           parsed.push({
             rowNum: i + 1,
             work_section: `経費_${currentSection}`,
-            name1: c, name2: '', name3: '',
+            name1: name, name2: '', name3: '',
             spec1: '', spec2: '', spec3: '',
             quantity: e !== null ? String(Number(e)) : '1',
             unit: f || '式',
-            unit_price: g !== null ? String(Number(g)) : '',
+            unit_price: String(unitPrice),
             amount,
             note1: '', note2: '', note3: '',
             warning: false,
@@ -172,6 +191,23 @@ export default function ImportPage() {
         return
       }
 
+      // マッチング計算
+      const sections = [...new Set(
+        parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
+      )]
+      const matches: SectionMatch[] = sections.map(name => {
+        const excelTotal = excelTotals[name] ?? null
+        const calcTotal = parsed
+          .filter(r => r.work_section === name || r.work_section === `経費_${name}`)
+          .reduce((sum, r) => sum + r.amount, 0)
+        return {
+          name,
+          excelTotal: excelTotal ?? 0,
+          calcTotal,
+          matched: excelTotal !== null && Math.round(excelTotal) === Math.round(calcTotal),
+        }
+      })
+      setSectionMatches(matches)
       setPreviewRows(parsed)
       setStep('preview')
     } catch (e) {
@@ -267,7 +303,10 @@ export default function ImportPage() {
   }
 
   const warningCount = previewRows.filter(r => r.warning).length
-  const sections = [...new Set(previewRows.map(r => r.work_section))]
+  const allMatched = sectionMatches.length > 0 && sectionMatches.every(m => m.matched)
+  const sections = [...new Set(
+    previewRows.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
+  )]
 
   // ==================== STEP: upload ====================
   if (step === 'upload') return (
@@ -328,10 +367,15 @@ export default function ImportPage() {
           )}
           <div className="ml-auto flex gap-2 items-center">
             <span className="text-xs text-gray-500">{previewRows.length}行</span>
-            <button onClick={handleImport} disabled={importing}
-              className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
-              title="SupabaseにINSERTする">
-              {importing ? '取り込み中...' : '取り込む'}
+            <button onClick={handleImport}
+              disabled={importing || !allMatched}
+              className={`px-4 py-1.5 rounded text-sm font-bold transition-colors ${
+                allMatched
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              title={allMatched ? 'SupabaseにINSERTする' : '全工事区分の合計が一致してから取り込めます'}>
+              {importing ? '取り込み中...' : allMatched ? '取り込む' : '合計不一致のため取り込み不可'}
             </button>
           </div>
         </div>
@@ -381,8 +425,41 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* 明細プレビュー */}
+      {/* マッチング確認 */}
       <div className="p-4 max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg border mb-4 overflow-hidden">
+          <div className="bg-gray-800 text-white px-4 py-2 text-sm font-bold">
+            工事区分 合計確認（全て✓になると取り込み可能）
+          </div>
+          <table className="w-full text-xs">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="p-2 text-left">工事区分</th>
+                <th className="p-2 text-right">Excelの計</th>
+                <th className="p-2 text-right">計算合計</th>
+                <th className="p-2 text-right">差額</th>
+                <th className="p-2 text-center w-12">判定</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sectionMatches.map(m => (
+                <tr key={m.name} className={`border-t ${m.matched ? 'bg-green-50' : 'bg-red-50'}`}>
+                  <td className="p-2 font-medium">{m.name}</td>
+                  <td className="p-2 text-right">{m.excelTotal.toLocaleString()} 円</td>
+                  <td className="p-2 text-right">{m.calcTotal.toLocaleString()} 円</td>
+                  <td className={`p-2 text-right ${m.matched ? 'text-gray-400' : 'text-red-600 font-bold'}`}>
+                    {m.matched ? '—' : `${(m.calcTotal - m.excelTotal).toLocaleString()} 円`}
+                  </td>
+                  <td className="p-2 text-center text-lg">
+                    {m.matched ? '✅' : '❌'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* 明細プレビュー */}
         {sections.map(section => {
           const sectionRows = previewRows.filter(r => r.work_section === section)
           const sectionTotal = sectionRows.reduce((sum, r) => sum + r.amount, 0)
@@ -468,6 +545,7 @@ export default function ImportPage() {
               </div>
             </div>
           )
+        })}
         })}
       </div>
     </main>
