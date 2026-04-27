@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.2
+// バージョン: V1.1.3
 // 更新: 2026/04/27
-// 変更: V1.1.2 エラーメッセージ詳細化
+// 変更: V1.1.3 デバッグ情報追加
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.2'
+const VERSION = 'V1.1.3'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -217,7 +217,8 @@ export default function ImportPage() {
       }
 
       if (parsed.length === 0) {
-        setErrorMsg('明細データが見つかりませんでした。Excelの形式を確認してください。')
+        const debugInfo = `行数:${rows.length} page2Started:${page2Started} section:${currentSection}`
+        setErrorMsg('明細データが見つかりませんでした。' + debugInfo)
         return
       }
 
