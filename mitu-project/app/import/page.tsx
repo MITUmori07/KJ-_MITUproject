@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.6
+// バージョン: V1.1.7
 // 更新: 2026/04/27
-// 変更: V1.1.6 列参照をheader:A方式に変更（min_column違いに対応）
+// 変更: V1.1.7 明細シート自動選択（建築・工事・明細シートを優先）
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.6'
+const VERSION = 'V1.1.7'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -89,7 +89,12 @@ export default function ImportPage() {
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array', cellFormula: false })
-      const ws = wb.Sheets[wb.SheetNames[0]]
+      // 明細シートを自動選択（「建築」「工事」を含むシートを優先）
+      const sheetNames = wb.SheetNames
+      const targetSheet = sheetNames.find(n =>
+        n.includes('建築') || n.includes('工事') || n.includes('明細')
+      ) || sheetNames[0]
+      const ws = wb.Sheets[targetSheet]
       // header:'A'で列名キー方式（A列からの絶対参照、min_columnの違いに対応）
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 'A', defval: null })
 
