@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.5
+// バージョン: V6.0.6
 // 更新: 2026/04/27
-// 変更: 取り込みボタン追加（/importへリンク）
+// 変更: V6.0.6 source_flag追加（1=取込/2=新規作成）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.5'
+const VERSION = 'V6.0.6'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -49,6 +49,7 @@ type Row = {
   showCandidates: boolean; source_estimate_item_id: number|null
   nightWork: boolean; excludeHakobi: boolean
   laborRate: string; nightDeepRate: string
+  source_flag: number
 }
 type Section = { id: string; name: string; rows: Row[] }
 type Filters = { staff: string; building: string; workType: string; year: string }
@@ -166,6 +167,7 @@ export default function HistoryPage() {
         note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
         showCandidates: false, source_estimate_item_id: item.id,
         nightWork: false, excludeHakobi: false, laborRate: '60', nightDeepRate: '0',
+        source_flag: 1,  // 1=Excelから取り込んだデータのコピー
       }))
     }))
     const { data, error } = await supabase.from('drafts').insert({
@@ -315,6 +317,7 @@ export default function HistoryPage() {
     note1:'', note2:'', note3:'', showCandidates:false,
     source_estimate_item_id: null,
     nightWork:false, excludeHakobi:false, laborRate:'60', nightDeepRate:'0',
+    source_flag: 2,  // 2=アプリで新規作成
   })
 
   const insertRowAfter = (sectionId: string, rowId: string, sectionName: string) => {
