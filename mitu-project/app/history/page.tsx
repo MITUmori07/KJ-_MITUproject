@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.3
+// バージョン: V6.0.4
 // 更新: 2026/04/27
-// 変更: ①1画面ボタン追加 ②A/B/C分岐モーダル+途中保存警告モーダル
+// 変更: ①1画面ボタンバグ修正（データ消えない） ②「途中保存」→「保存」
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.3'
+const VERSION = 'V6.0.4'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -598,9 +598,9 @@ export default function HistoryPage() {
             title="history画面に戻る">← 戻る</button>
           {/* ① 2画面時のみ「1画面」ボタン */}
           {is2Pane && (
-            <button onClick={() => { setIs2Pane(false); setShowEstimate(false) }}
+            <button onClick={() => setIs2Pane(false)}
               className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs font-medium"
-              title="1画面モードに戻る">1画面</button>
+              title="1画面モードに戻る（入力データは保持）">1画面</button>
           )}
           <span className="text-sm font-bold text-gray-800">明細入力</span>
           {modeBadge(copyMode)}
@@ -645,8 +645,8 @@ export default function HistoryPage() {
             {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
             <button onClick={saveDraft} disabled={saving}
               className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50"
-              title="途中保存（日付・件名未入力でも保存可）">
-              {saving ? '保存中...' : '途中保存'}</button>
+              title="保存（日付・件名未入力でも保存可）">
+              {saving ? '保存中...' : '保存'}</button>
             <button onClick={handleExport}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
               title="Excel出力（日付・件名必須）">Excel出力</button>
