@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.3
+// バージョン: V1.1.4
 // 更新: 2026/04/27
-// 変更: V1.1.3 デバッグ情報追加
+// 変更: V1.1.4 B列数値判定を文字列にも対応
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.3'
+const VERSION = 'V1.1.4'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -123,7 +123,8 @@ export default function ImportPage() {
 
         // 工事区分ヘッダー（B列が数字でC列に名称、数量なし）
         // → ここで初めてpage2Started=true（1ページ目サマリーをスキップ）
-        if (typeof b === 'number' && c && !e && !g) {
+        const bNum = typeof b === 'number' || (typeof b === 'string' && /^\d+$/.test(b.trim()))
+        if (bNum && c && !e && !g) {
           page2Started = true
           currentSection = c
           rowOrder = 0
