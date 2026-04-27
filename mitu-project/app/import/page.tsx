@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.5
+// バージョン: V1.1.6
 // 更新: 2026/04/27
-// 変更: V1.1.5 B列生値デバッグ追加
+// 変更: V1.1.6 列参照をheader:A方式に変更（min_column違いに対応）
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.5'
+const VERSION = 'V1.1.6'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -90,7 +90,8 @@ export default function ImportPage() {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array', cellFormula: false })
       const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+      // header:'A'で列名キー方式（A列からの絶対参照、min_columnの違いに対応）
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 'A', defval: null })
 
       const parsed: PreviewRow[] = []
       const excelTotals: Record<string, number> = {}
@@ -105,14 +106,14 @@ export default function ImportPage() {
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
-        const b = row[1]  // B列: 番号
-        const c = String(row[2] || '').trim()  // C列: 名称
-        const d = String(row[3] || '').trim()  // D列: 仕様
-        const e = row[4]  // E列: 数量
-        const f = String(row[5] || '').trim()  // F列: 単位
-        const g = row[6]  // G列: 単価
-        const h = row[7]  // H列: 金額
-        const ii = String(row[8] || '').trim() // I列: 備考
+        const b = row['B']  // B列: 番号
+        const c = String(row['C'] || '').trim()  // C列: 名称
+        const d = String(row['D'] || '').trim()  // D列: 仕様
+        const e = row['E']  // E列: 数量
+        const f = String(row['F'] || '').trim()  // F列: 単位
+        const g = row['G']  // G列: 単価
+        const h = row['H']  // H列: 金額
+        const ii = String(row['I'] || '').trim() // I列: 備考
 
         // ページ番号行スキップ
         if (isPageNum(ii) && !c) continue
@@ -219,7 +220,7 @@ export default function ImportPage() {
 
       if (parsed.length === 0) {
         // B列の最初の10件を確認
-        const bVals = rows.slice(0, 40).map((r, i) => `行${i+1}:B=${JSON.stringify(r[1])}`).join(' / ')
+        const bVals = rows.slice(0, 40).map((r: any, i: number) => `行${i+1}:B=${JSON.stringify(r['B'])}C=${JSON.stringify(r['C'])}`).join(' / ')
         const debugInfo = `行数:${rows.length} page2Started:${page2Started} B列サンプル: ${bVals}`
         setErrorMsg('明細データが見つかりませんでした。' + debugInfo)
         return
