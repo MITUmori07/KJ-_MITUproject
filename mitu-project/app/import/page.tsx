@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.7
+// バージョン: V1.0.8
 // 更新: 2026/04/27
-// 変更: V1.0.7 経費行をプレビューに表示（グレー背景）
+// 変更: V1.0.8 小計判定をC列/D列両対応に修正
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.7'
+const VERSION = 'V1.0.8'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -140,8 +140,8 @@ export default function ImportPage() {
           continue
         }
 
-        // 小計行: 小計以降を経費フェーズに切り替え
-        const isSubtotal = d === '小計' && !c
+        // 小計行: C列またはD列に「小計」を含む行 → 経費フェーズに切り替え
+        const isSubtotal = (c === '小計' || d === '小計') && !isSectionTotalRow(c, d)
         if (isSubtotal && currentSection) {
           afterSubtotal = true
           const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
