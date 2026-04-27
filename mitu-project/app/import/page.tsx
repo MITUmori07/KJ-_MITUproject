@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.1
+// バージョン: V1.1.2
 // 更新: 2026/04/27
-// 変更: V1.1.1 1ページ目スキップを工事区分ヘッダー検出方式に変更
+// 変更: V1.1.2 エラーメッセージ詳細化
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.1'
+const VERSION = 'V1.1.2'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -246,8 +246,8 @@ export default function ImportPage() {
       setSectionMatches(matches)
       setPreviewRows(parsed)
       setStep('preview')
-    } catch (e) {
-      setErrorMsg('ファイルの読み込みに失敗しました。Excelファイルを確認してください。')
+    } catch (e: any) {
+      setErrorMsg('ファイルの読み込みに失敗しました: ' + (e?.message || String(e)))
     }
   }
 
@@ -356,8 +356,8 @@ export default function ImportPage() {
 
       setDoneMsg(`取り込み完了！ ${previewRows.length}行を登録しました。`)
       setStep('done')
-    } catch (e) {
-      setErrorMsg('予期しないエラーが発生しました')
+    } catch (e: any) {
+      setErrorMsg('予期しないエラーが発生しました: ' + (e?.message || String(e)))
     }
     setImporting(false)
   }
