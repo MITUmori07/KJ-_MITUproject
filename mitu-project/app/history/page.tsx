@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.4
+// バージョン: V6.0.5
 // 更新: 2026/04/27
-// 変更: ①1画面ボタンバグ修正（データ消えない） ②「途中保存」→「保存」
+// 変更: 取り込みボタン追加（/importへリンク）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.4'
+const VERSION = 'V6.0.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -885,6 +885,9 @@ export default function HistoryPage() {
           title="コピー方法を選択して編集">
           {copying || loading ? '読込中...' : is2Pane ? '→編集' : 'コピー編集'}
         </button>
+        <a href="/import"
+          className="bg-purple-600 text-white px-2 py-0.5 rounded text-xs hover:bg-purple-700 whitespace-nowrap"
+          title="Excelファイルを取り込む">取り込み</a>
         <button onClick={() => setIs2Pane(!is2Pane)} style={{
           backgroundColor: is2Pane ? '#2563eb' : '#ffffff', color: is2Pane ? '#ffffff' : '#2563eb',
           border: '1px solid #2563eb', borderRadius: '4px', padding: '2px 8px',
