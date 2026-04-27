@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.8
+// バージョン: V1.0.9
 // 更新: 2026/04/27
-// 変更: V1.0.8 小計判定をC列/D列両対応に修正
+// 変更: V1.0.9 プレビュー画面にVERSION表示追加
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.8'
+const VERSION = 'V1.0.9'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -418,6 +418,7 @@ export default function ImportPage() {
             title="アップロード画面に戻る">← 戻る</button>
           <span className="text-sm font-bold text-gray-700">プレビュー確認</span>
           <span className="text-xs text-gray-500">{fileName}</span>
+          <span className="text-xs text-gray-400 ml-1">{VERSION}</span>
           {warningCount > 0 && (
             <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded">
               ⚠️ {warningCount}行 要確認
