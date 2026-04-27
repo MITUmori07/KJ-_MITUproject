@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.2
+// バージョン: V1.0.3
 // 更新: 2026/04/27
-// 変更: V1.0.2 小計・経費バグ修正・マッチング確認機能追加
+// 変更: V1.0.3 小計フェーズ切替・マッチング合計修正
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.2'
+const VERSION = 'V1.0.3'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -96,6 +96,10 @@ export default function ImportPage() {
       const excelTotals: Record<string, number> = {}
       let currentSection = ''
       let rowOrder = 0
+      // 小計が出たら経費フェーズに切り替え
+      let afterSubtotal = false
+
+      const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
@@ -119,6 +123,7 @@ export default function ImportPage() {
         if (typeof b === 'number' && c && !e && !g) {
           currentSection = c
           rowOrder = 0
+          afterSubtotal = false  // 新しい工事区分に入ったらリセット
           continue
         }
 
@@ -128,33 +133,50 @@ export default function ImportPage() {
           continue
         }
 
-        // 小計・経費行（仮設工事費・運搬費・深夜・現場経費・小計）
-        const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
-        const isExpense = EXPENSE_NAMES.some(e => c.includes(e))
+        // 小計行: 小計以降を経費フェーズに切り替え
         const isSubtotal = d === '小計' && !c
-        if ((isExpense || isSubtotal) && currentSection) {
-          // 金額: G列（単価）が空の場合はH列（金額）を直接使う
+        if (isSubtotal && currentSection) {
+          afterSubtotal = true
           const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
-          const unitPrice = g !== null && g !== undefined ? Number(g) : amount
-          const name = isSubtotal ? '小計' : c
           rowOrder++
           parsed.push({
             rowNum: i + 1,
             work_section: `経費_${currentSection}`,
-            name1: name, name2: '', name3: '',
+            name1: '小計', name2: '', name3: '',
             spec1: '', spec2: '', spec3: '',
-            quantity: e !== null ? String(Number(e)) : '1',
-            unit: f || '式',
-            unit_price: String(unitPrice),
+            quantity: '1', unit: '式',
+            unit_price: String(amount),
             amount,
             note1: '', note2: '', note3: '',
-            warning: false,
-            warningMsg: '',
+            warning: false, warningMsg: '',
           })
           continue
         }
 
-        // データ行
+        // 経費フェーズ: 小計より下の仮設・運搬・深夜・現場経費
+        if (afterSubtotal && currentSection) {
+          const isExpense = EXPENSE_NAMES.some(n => c.includes(n))
+          if (isExpense) {
+            const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
+            const unitPrice = g !== null && g !== undefined ? Number(g) : amount
+            rowOrder++
+            parsed.push({
+              rowNum: i + 1,
+              work_section: `経費_${currentSection}`,
+              name1: c, name2: '', name3: '',
+              spec1: '', spec2: '', spec3: '',
+              quantity: e !== null ? String(Number(e)) : '1',
+              unit: f || '式',
+              unit_price: String(unitPrice),
+              amount,
+              note1: '', note2: '', note3: '',
+              warning: false, warningMsg: '',
+            })
+            continue
+          }
+        }
+
+        // 明細行（小計より上の全行）
         if (c) {
           const [n1, n2, n3] = split3(c)
           const [s1, s2, s3] = split3(d)
@@ -191,15 +213,21 @@ export default function ImportPage() {
         return
       }
 
-      // マッチング計算
+      // マッチング計算: 明細合計 + 経費合計 = 工事区分の計
       const sections = [...new Set(
         parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
       )]
       const matches: SectionMatch[] = sections.map(name => {
         const excelTotal = excelTotals[name] ?? null
-        const calcTotal = parsed
-          .filter(r => r.work_section === name || r.work_section === `経費_${name}`)
+        // 明細行合計（小計相当）
+        const detailTotal = parsed
+          .filter(r => r.work_section === name)
           .reduce((sum, r) => sum + r.amount, 0)
+        // 経費行合計（仮設・運搬・深夜・現場経費）※小計行は除く
+        const expenseTotal = parsed
+          .filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計')
+          .reduce((sum, r) => sum + r.amount, 0)
+        const calcTotal = detailTotal + expenseTotal
         return {
           name,
           excelTotal: excelTotal ?? 0,
