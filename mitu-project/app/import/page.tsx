@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.5
+// バージョン: V1.0.6
 // 更新: 2026/04/27
-// 変更: V1.0.5 1ページ目サマリーをスキップ
+// 変更: V1.0.6 経費フェーズ全行取込・金額修正でマッチング再計算
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.5'
+const VERSION = 'V1.0.6'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -160,27 +160,26 @@ export default function ImportPage() {
           continue
         }
 
-        // 経費フェーズ: 小計より下の仮設・運搬・深夜・現場経費
-        if (afterSubtotal && currentSection) {
-          const isExpense = EXPENSE_NAMES.some(n => c.includes(n))
-          if (isExpense) {
-            const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
-            const unitPrice = g !== null && g !== undefined ? Number(g) : amount
-            rowOrder++
-            parsed.push({
-              rowNum: i + 1,
-              work_section: `経費_${currentSection}`,
-              name1: c, name2: '', name3: '',
-              spec1: '', spec2: '', spec3: '',
-              quantity: e !== null ? String(Number(e)) : '1',
-              unit: f || '式',
-              unit_price: String(unitPrice),
-              amount,
-              note1: '', note2: '', note3: '',
-              warning: false, warningMsg: '',
-            })
-            continue
-          }
+        // 経費フェーズ: 小計より下は名称がある行を全部経費として取り込む
+        if (afterSubtotal && currentSection && c) {
+          const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
+          const unitPrice = g !== null && g !== undefined ? Number(g) : amount
+          const [n1, n2, n3] = split3(c)
+          const [s1, s2, s3] = split3(d)
+          rowOrder++
+          parsed.push({
+            rowNum: i + 1,
+            work_section: `経費_${currentSection}`,
+            name1: n1, name2: n2, name3: n3,
+            spec1: s1, spec2: s2, spec3: s3,
+            quantity: e !== null ? String(Number(e)) : '1',
+            unit: f || '式',
+            unit_price: String(unitPrice),
+            amount,
+            note1: '', note2: '', note3: '',
+            warning: false, warningMsg: '',
+          })
+          continue
         }
 
         // 明細行（小計より上の全行）
@@ -257,15 +256,39 @@ export default function ImportPage() {
   }
 
   const updateRow = (idx: number, field: keyof PreviewRow, value: string) => {
-    setPreviewRows(prev => prev.map((r, i) => {
-      if (i !== idx) return r
-      const updated = { ...r, [field]: value }
-      const q = parseFloat(updated.quantity) || 0
-      const p = parseFloat(updated.unit_price) || 0
-      updated.amount = Math.round(q * p)
-      updated.warning = !updated.work_section || !updated.quantity || !updated.unit_price
-      return updated
-    }))
+    setPreviewRows(prev => {
+      const next = prev.map((r, i) => {
+        if (i !== idx) return r
+        const updated = { ...r, [field]: value }
+        const q = parseFloat(updated.quantity) || 0
+        const p = parseFloat(updated.unit_price) || 0
+        updated.amount = Math.round(q * p)
+        updated.warning = !updated.work_section || !updated.quantity || !updated.unit_price
+        return updated
+      })
+      // マッチング再計算
+      const sections = [...new Set(
+        next.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
+      )]
+      const matches = sections.map(name => {
+        const excelTotal = sectionMatches.find(m => m.name === name)?.excelTotal ?? 0
+        const detailTotal = next
+          .filter(r => r.work_section === name)
+          .reduce((sum, r) => sum + r.amount, 0)
+        const expenseTotal = next
+          .filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計')
+          .reduce((sum, r) => sum + r.amount, 0)
+        const calcTotal = detailTotal + expenseTotal
+        return {
+          name,
+          excelTotal,
+          calcTotal,
+          matched: Math.round(excelTotal) === Math.round(calcTotal),
+        }
+      })
+      setSectionMatches(matches)
+      return next
+    })
   }
 
   const deleteRow = (idx: number) => {
