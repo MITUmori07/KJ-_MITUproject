@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.6
+// バージョン: V1.0.7
 // 更新: 2026/04/27
-// 変更: V1.0.6 経費フェーズ全行取込・金額修正でマッチング再計算
+// 変更: V1.0.7 経費行をプレビューに表示（グレー背景）
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.6'
+const VERSION = 'V1.0.7'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -520,12 +520,15 @@ export default function ImportPage() {
         {/* 明細プレビュー */}
         {sections.map(section => {
           const sectionRows = previewRows.filter(r => r.work_section === section)
+          const expenseRows = previewRows.filter(r => r.work_section === `経費_${section}`)
           const sectionTotal = sectionRows.reduce((sum, r) => sum + r.amount, 0)
+          const expenseTotal = expenseRows.reduce((sum, r) => sum + r.amount, 0)
+          const allRows = [...sectionRows, ...expenseRows]
           return (
             <div key={section} className="mb-6">
               <div className="bg-blue-800 text-white px-4 py-2 rounded-t flex justify-between">
                 <span className="font-bold text-sm">{section}</span>
-                <span className="text-xs">小計 {sectionTotal.toLocaleString()} 円</span>
+                <span className="text-xs">小計 {sectionTotal.toLocaleString()} 円　経費 {expenseTotal.toLocaleString()} 円</span>
               </div>
               <div className="bg-white border border-t-0 rounded-b overflow-x-auto">
                 <table className="w-full text-xs">
@@ -543,10 +546,11 @@ export default function ImportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sectionRows.map(row => {
+                    {allRows.map(row => {
                       const idx = previewRows.indexOf(row)
+                      const isExpense = row.work_section.startsWith('経費_')
                       return (
-                        <tr key={idx} className={`border-t ${row.warning ? 'bg-yellow-50' : ''}`}>
+                        <tr key={idx} className={`border-t ${row.warning ? 'bg-yellow-50' : isExpense ? 'bg-gray-50' : ''}`}>
                           <td className="p-1 text-center text-gray-400">
                             {row.warning
                               ? <span title={row.warningMsg} className="text-yellow-600 cursor-help">⚠️</span>
