@@ -1,16 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V5.0.5
-// 更新: 2026/04/25
-// 変更: ポップアップタブ表示修正・年度選択修正・
-//       解体なし時件名表示バグ修正・工事区分削除アラート追加
+// バージョン: V6.0.1
+// 更新: 2026/04/27
+// 変更: ①2画面モード ④夜搬ボタン+計算 ⑤数量1桁表示 ⑧(route.ts別)
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V5.0.5'
+const VERSION = 'V6.0.1'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -69,6 +68,7 @@ type PopupItem = {
   estimate_id: number
 }
 
+// ▼ V6.0.1: nightWork/excludeHakobi/laborRate/nightDeepRate追加
 type Row = {
   id: string; name1: string; name2: string; name3: string
   spec1: string; spec2: string; spec3: string
@@ -76,6 +76,10 @@ type Row = {
   note1: string; note2: string; note3: string
   showCandidates: boolean
   source_estimate_item_id: number | null
+  nightWork: boolean
+  excludeHakobi: boolean
+  laborRate: string
+  nightDeepRate: string
 }
 
 type Section = { id: string; name: string; rows: Row[] }
@@ -106,7 +110,8 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(false)
   const [copying, setCopying] = useState(false)
   const [showTitleList, setShowTitleList] = useState(false)
-  const [is880, setIs880] = useState(false)
+  // ▼ V6.0.1: is880 → is2Pane (2画面モード)
+  const [is2Pane, setIs2Pane] = useState(false)
   const [filters, setFilters] = useState<Filters>({
     staff: '', building: '', workType: '', year: ''
   })
@@ -122,7 +127,6 @@ export default function HistoryPage() {
   const [savedMsg, setSavedMsg] = useState('')
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
 
-  // ▼ ポップアップstate
   const [popup, setPopup] = useState<{
     sectionId: string; rowId: string; workSection: string
   } | null>(null)
@@ -229,6 +233,11 @@ export default function HistoryPage() {
           note3: item.note3 || '',
           showCandidates: false,
           source_estimate_item_id: item.id,
+          // ▼ V6.0.1: 夜搬フィールド初期値
+          nightWork: false,
+          excludeHakobi: false,
+          laborRate: '60',
+          nightDeepRate: '0',
         }))
     }))
 
@@ -319,12 +328,10 @@ export default function HistoryPage() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  // ▼ V4.2.6修正: openPopup時にsectionsから直接name1を取得
   const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupSearch('')
     setPopupTab('history')
-    // sectionsは既にstateにある→直接読める
     const section = sections.find(s => s.id === sectionId)
     const row = section?.rows.find(r => r.id === rowId)
     setCurrentRowName(row?.name1 || '')
@@ -367,7 +374,6 @@ export default function HistoryPage() {
     newData: Partial<Row>,
     sectionId: string,
     rowId: string,
-    sectionName: string
   ) => {
     const doOverwrite = () => {
       setSections(prev => prev.map(s => {
@@ -394,14 +400,9 @@ export default function HistoryPage() {
       setPopup(null)
     }
 
-    // openPopup時に取得したcurrentRowNameを使う
     if (currentRowName) {
       const choice = window.confirm('書き換えますか？\nOK = 書き換え　キャンセル = 下に追加')
-      if (choice) {
-        doOverwrite()
-      } else {
-        doInsert()
-      }
+      if (choice) { doOverwrite() } else { doInsert() }
     } else {
       doOverwrite()
     }
@@ -417,7 +418,7 @@ export default function HistoryPage() {
       note1: item.note1 || '', note2: item.note2 || '', note3: item.note3 || '',
       source_estimate_item_id: item.id,
     }
-    applyItemToRow(newData, popup.sectionId, popup.rowId, popup.workSection)
+    applyItemToRow(newData, popup.sectionId, popup.rowId)
   }
 
   const selectMasterItem = (item: MasterItem) => {
@@ -431,7 +432,7 @@ export default function HistoryPage() {
       note1: '', note2: '', note3: '',
       source_estimate_item_id: null,
     }
-    applyItemToRow(newData, popup.sectionId, popup.rowId, popup.workSection)
+    applyItemToRow(newData, popup.sectionId, popup.rowId)
   }
 
   const filteredPopupItems = popupItems.filter(item => {
@@ -450,6 +451,7 @@ export default function HistoryPage() {
     return (item.name1 || '').toLowerCase().includes(kw) || (item.spec1 || '').toLowerCase().includes(kw)
   })
 
+  // ▼ V6.0.1: 新Row初期値に夜搬フィールド追加
   const newRow = (): Row => ({
     id: Math.random().toString(36).slice(2),
     name1:'', name2:'', name3:'',
@@ -457,7 +459,11 @@ export default function HistoryPage() {
     quantity:'', unit:'', unit_price:'', amount:0,
     note1:'', note2:'', note3:'',
     showCandidates:false,
-    source_estimate_item_id: null
+    source_estimate_item_id: null,
+    nightWork: false,
+    excludeHakobi: false,
+    laborRate: '60',
+    nightDeepRate: '0',
   })
 
   const insertRowAfter = (sectionId: string, rowId: string, sectionName: string) => {
@@ -490,7 +496,6 @@ export default function HistoryPage() {
     ))
   }
 
-  // ▼ V4.2.1修正: 工事区分削除にアラート追加
   const deleteSection = (id: string) => {
     const section = sections.find(s => s.id === id)
     if (!section) return
@@ -514,6 +519,19 @@ export default function HistoryPage() {
     }))
   }
 
+  // ▼ V6.0.1: boolean フィールドのトグル（夜・搬）
+  const toggleRowBool = (sectionId: string, rowId: string, field: 'nightWork' | 'excludeHakobi') => {
+    setSections(prev => prev.map(s => {
+      if (s.id !== sectionId) return s
+      return {
+        ...s, rows: s.rows.map(r => {
+          if (r.id !== rowId) return r
+          return { ...r, [field]: !r[field] }
+        })
+      }
+    }))
+  }
+
   const addSection = (name: string) => {
     if (!name.trim()) return
     setSections(prev => {
@@ -529,28 +547,35 @@ export default function HistoryPage() {
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
   const grandTotal = sections.reduce((sum, s) => sum + subtotal(s), 0)
 
+  // ▼ V6.0.1: 夜間割増費計算
+  // (金額 × 労務費率 × 夜間割増50%) + (金額 × 労務費率 × 深夜割増率)
+  const getNightCost = (section: Section) => {
+    return section.rows
+      .filter(r => r.nightWork)
+      .reduce((sum, r) => {
+        const labor = (parseFloat(r.laborRate) || 60) / 100
+        const deep = (parseFloat(r.nightDeepRate) || 0) / 100
+        return sum + (r.amount * labor * 0.5) + (r.amount * labor * deep)
+      }, 0)
+  }
+
+  // ▼ V6.0.1: 搬入費計算（excludeHakobi=false の行合計 × 2%）
+  const getHakobiCost = (section: Section) => {
+    const target = section.rows
+      .filter(r => !r.excludeHakobi)
+      .reduce((sum, r) => sum + r.amount, 0)
+    return Math.round(target * 0.02)
+  }
+
   const handleExport = async () => {
     if (!copyInfo) return
-    if (copying) {
-      alert('データ読み込み中です。少し待ってください')
-      return
-    }
+    if (copying) { alert('データ読み込み中です。少し待ってください'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) {
-      alert('明細データがありません')
-      return
+      alert('明細データがありません'); return
     }
-    if (!copyInfo.date && !copyInfo.title) {
-      alert('日付と件名を入力してください')
-      return
-    }
-    if (!copyInfo.date) {
-      alert('日付を入力してください')
-      return
-    }
-    if (!copyInfo.title) {
-      alert('件名を入力してください')
-      return
-    }
+    if (!copyInfo.date && !copyInfo.title) { alert('日付と件名を入力してください'); return }
+    if (!copyInfo.date) { alert('日付を入力してください'); return }
+    if (!copyInfo.title) { alert('件名を入力してください'); return }
     await saveDraft()
     const res = await fetch('/api/export', {
       method: 'POST',
@@ -653,219 +678,175 @@ export default function HistoryPage() {
     unit: '4%', price: '10%', amount: '11%', note: '16%',
   }
 
-  // ==================== ポップアップUI ====================
-  const PopupUI = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
-          <h3 className="text-white font-bold">品目選択 - {popup?.workSection}</h3>
-          <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
-        </div>
-
-        {/* タブ */}
-        <div className="flex border-b">
-          <button
-            onClick={() => handleTabChange('history')}
-            className={`flex-1 py-2 text-sm font-medium ${popupTab === 'history' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
-            過去見積
-          </button>
-          <button
-            onClick={() => handleTabChange('master')}
-            className={`flex-1 py-2 text-sm font-medium ${popupTab === 'master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
-            単価マスタ
-          </button>
-        </div>
-
-        {/* 年度セレクト（masterタブのみ） */}
-        {popupTab === 'master' && (
-          <div className="px-3 pt-2 flex items-center gap-2">
-            <span className="text-xs text-gray-500">年度:</span>
-            <select
-              className="border rounded px-2 py-1 text-xs"
-              value={fiscalYear}
-              onChange={e => setFiscalYear(Number(e.target.value))}>
-              {availableYears.map(y => <option key={y} value={y}>{y}年度</option>)}
-            </select>
+  // ==================== ポップアップ JSX (コピー編集内) ====================
+  const renderPopup = () => {
+    if (!popup) return null
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
+            <h3 className="text-white font-bold">品目選択 - {popup.workSection}</h3>
+            <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
           </div>
-        )}
-
-        {/* 検索 */}
-        <div className="p-3 border-b">
-          <input
-            className="w-full border rounded px-3 py-2 text-sm"
-            placeholder="名称・仕様で絞り込み"
-            value={popupSearch}
-            onChange={e => setPopupSearch(e.target.value)}
-            autoFocus />
-        </div>
-
-        <div className="overflow-y-auto flex-1">
-          {popupLoading ? (
-            <div className="p-8 text-center text-gray-400">読み込み中...</div>
-          ) : popupTab === 'history' ? (
-            uniquePopupItems.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">
-                {popupSearch ? '該当する品目がありません' : 'このカテゴリの品目データがありません'}
-              </div>
-            ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="p-2 text-left">名称</th>
-                    <th className="p-2 text-left">仕様</th>
-                    <th className="p-2 text-left w-12">単位</th>
-                    <th className="p-2 text-right w-20">単価</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {uniquePopupItems.map(item => (
-                    <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
-                      onClick={() => selectPopupItem(item)}>
-                      <td className="p-2">
-                        <div>{item.name1}</div>
-                        {item.name2 && <div className="text-gray-400">{item.name2}</div>}
-                      </td>
-                      <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
-                      <td className="p-2">{item.unit}</td>
-                      <td className="p-2 text-right font-medium">
-                        {item.unit_price ? item.unit_price.toLocaleString() : '-'}
-                      </td>
-                    </tr>
+          <div className="flex border-b">
+            <button onClick={() => handleTabChange('history')}
+              className={`flex-1 py-2 text-sm font-medium ${popupTab === 'history' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
+              過去見積
+            </button>
+            <button onClick={() => handleTabChange('master')}
+              className={`flex-1 py-2 text-sm font-medium ${popupTab === 'master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
+              単価マスタ
+            </button>
+          </div>
+          {popupTab === 'master' && (
+            <div className="px-3 pt-2 flex items-center gap-2">
+              <span className="text-xs text-gray-500">年度:</span>
+              <select className="border rounded px-2 py-1 text-xs"
+                value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
+                {availableYears.map(y => <option key={y} value={y}>{y}年度</option>)}
+              </select>
+            </div>
+          )}
+          <div className="p-4 flex-1">
+            {popupLoading ? (
+              <div className="p-8 text-center text-gray-400">読み込み中...</div>
+            ) : popupTab === 'history' ? (
+              uniquePopupItems.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">このカテゴリの品目データがありません</div>
+              ) : (
+                <select size={10} className="w-full border rounded text-sm"
+                  onChange={e => {
+                    const item = uniquePopupItems[Number(e.target.value)]
+                    if (item) selectPopupItem(item)
+                  }}>
+                  {uniquePopupItems.map((item, idx) => (
+                    <option key={item.id} value={idx}>
+                      {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{item.unit_price ? ` / ${item.unit_price.toLocaleString()}円` : ''}
+                    </option>
                   ))}
-                </tbody>
-              </table>
-            )
-          ) : (
-            filteredMasterItems.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">
-                {popupSearch ? '該当する品目がありません' : '品目データがありません'}
-              </div>
+                </select>
+              )
             ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="p-2 text-left">名称</th>
-                    <th className="p-2 text-left">仕様</th>
-                    <th className="p-2 text-left w-12">単位</th>
-                    <th className="p-2 text-right w-24">{fiscalYear}年度単価</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMasterItems.map(item => {
-                    const priceObj = item.item_prices?.find(p => p.fiscal_year === fiscalYear)
+              filteredMasterItems.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">品目データがありません</div>
+              ) : (
+                <select size={10} className="w-full border rounded text-sm"
+                  onChange={e => {
+                    const item = filteredMasterItems[Number(e.target.value)]
+                    if (item) selectMasterItem(item)
+                  }}>
+                  {filteredMasterItems.map((item, idx) => {
+                    const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
                     return (
-                      <tr key={item.id} className="border-t hover:bg-blue-50 cursor-pointer"
-                        onClick={() => selectMasterItem(item)}>
-                        <td className="p-2">
-                          <div>{item.name1}</div>
-                          {item.name2 && <div className="text-gray-400">{item.name2}</div>}
-                        </td>
-                        <td className="p-2 text-gray-500"><div>{item.spec1}</div></td>
-                        <td className="p-2">{item.unit}</td>
-                        <td className="p-2 text-right font-medium">
-                          {priceObj ? priceObj.price1.toLocaleString() : '-'}
-                        </td>
-                      </tr>
+                      <option key={item.id} value={idx}>
+                        {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{priceObj ? ` / ${priceObj.price1.toLocaleString()}円` : ''}
+                      </option>
                     )
                   })}
-                </tbody>
-              </table>
-            )
-          )}
-        </div>
-        <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
-          {popupTab === 'history' ? uniquePopupItems.length : filteredMasterItems.length}件表示
+                </select>
+              )
+            )}
+          </div>
+          <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
+            {popupTab === 'history' ? uniquePopupItems.length : filteredMasterItems.length}件表示
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
-  // ==================== estimate画面 ====================
-  if (showEstimate && copyInfo) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        {/* ▼ V5.0.3: 3行固定ヘッダー */}
-        <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
-          {/* 1行目: 戻る・タイトル・バージョン */}
-          <div className="flex items-center gap-2 px-2 py-1">
-            <button
-              onClick={() => { setShowEstimate(false); setSections([]) }}
-              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs">
-              ← 戻る
-            </button>
-            <span className="text-sm font-bold text-gray-800">明細入力</span>
-            <span className="bg-orange-500 text-xs text-white px-2 py-0.5 rounded">コピー編集中</span>
-            <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
+  // ==================== コピー編集エリア JSX ====================
+  const renderEstimate = () => (
+    <main className="min-h-screen bg-gray-50">
+      {/* ▼ 3行固定ヘッダー */}
+      <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
+        {/* 1行目 */}
+        <div className="flex items-center gap-2 px-2 py-1">
+          <button
+            onClick={() => { setShowEstimate(false); setSections([]) }}
+            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs"
+            title="history画面に戻る">
+            ← 戻る
+          </button>
+          <span className="text-sm font-bold text-gray-800">明細入力</span>
+          <span className="bg-orange-500 text-xs text-white px-2 py-0.5 rounded">コピー編集中</span>
+          <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
+        </div>
+        {/* 2行目: 案件情報 */}
+        <div className="px-2 pb-1 flex flex-wrap gap-1 items-end border-t">
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
+            <input type="date" className="border rounded px-1 py-0.5 text-xs w-32"
+              value={copyInfo!.date}
+              onChange={e => setCopyInfo({...copyInfo!, date: e.target.value})} />
           </div>
-          {/* 2行目: 案件情報入力 */}
-          <div className="px-2 pb-1 flex flex-wrap gap-1 items-end border-t">
-            <div className="flex flex-col gap-0.5">
-              <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
-              <input type="date" className="border rounded px-1 py-0.5 text-xs w-32"
-                value={copyInfo.date}
-                onChange={e => setCopyInfo({...copyInfo, date: e.target.value})} />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-xs text-gray-400">ビル名</label>
-              <select className="border rounded px-1 py-0.5 text-xs w-24"
-                value={copyInfo.building}
-                onChange={e => setCopyInfo({...copyInfo, building: e.target.value})}>
-                {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
-              <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
-              <input type="text" className="border rounded px-1 py-0.5 text-xs w-full"
-                value={copyInfo.title}
-                placeholder="件名を入力"
-                onChange={e => setCopyInfo({...copyInfo, title: e.target.value})} />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-xs text-gray-400">担当者</label>
-              <input type="text" className="border rounded px-1 py-0.5 text-xs w-16"
-                value={copyInfo.staff}
-                onChange={e => setCopyInfo({...copyInfo, staff: e.target.value})} />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-xs text-gray-400">種別</label>
-              <select className="border rounded px-1 py-0.5 text-xs w-20"
-                value={copyInfo.work_type}
-                onChange={e => setCopyInfo({...copyInfo, work_type: e.target.value})}>
-                {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
-              </select>
-            </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-400">ビル名</label>
+            <select className="border rounded px-1 py-0.5 text-xs w-24"
+              value={copyInfo!.building}
+              onChange={e => setCopyInfo({...copyInfo!, building: e.target.value})}>
+              {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
           </div>
-          {/* 3行目: 合計・ボタン */}
-          <div className="px-2 py-1 flex items-center gap-2 border-t">
-            <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
-            <div className="ml-auto flex gap-2 items-center">
-              {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
-              <button onClick={saveDraft} disabled={saving}
-                className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50">
-                {saving ? '保存中...' : '途中保存'}
-              </button>
-              <button onClick={handleExport}
-                className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700">
-                Excel出力
-              </button>
-            </div>
+          <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
+            <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
+            <input type="text" className="border rounded px-1 py-0.5 text-xs w-full"
+              value={copyInfo!.title}
+              placeholder="件名を入力"
+              onChange={e => setCopyInfo({...copyInfo!, title: e.target.value})} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-400">担当者</label>
+            <input type="text" className="border rounded px-1 py-0.5 text-xs w-16"
+              value={copyInfo!.staff}
+              onChange={e => setCopyInfo({...copyInfo!, staff: e.target.value})} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-400">種別</label>
+            <select className="border rounded px-1 py-0.5 text-xs w-20"
+              value={copyInfo!.work_type}
+              onChange={e => setCopyInfo({...copyInfo!, work_type: e.target.value})}>
+              {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
+            </select>
           </div>
         </div>
+        {/* 3行目: 合計・ボタン */}
+        <div className="px-2 py-1 flex items-center gap-2 border-t">
+          <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
+          <div className="ml-auto flex gap-2 items-center">
+            {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
+            <button onClick={saveDraft} disabled={saving}
+              className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50"
+              title="途中保存（日付・件名未入力でも保存可）">
+              {saving ? '保存中...' : '途中保存'}
+            </button>
+            <button onClick={handleExport}
+              className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
+              title="Excel出力（日付・件名必須）">
+              Excel出力
+            </button>
+          </div>
+        </div>
+      </div>
 
-        <div className="max-w-6xl mx-auto p-4">
-          {sections.map(section => (
+      <div className="max-w-6xl mx-auto p-4">
+        {sections.map(section => {
+          const nightCost = Math.round(getNightCost(section))
+          const hakobiCost = getHakobiCost(section)
+          return (
             <div key={section.id} className="mb-6">
               <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
                 <h2 className="text-lg font-bold">{section.name}</h2>
                 <button
                   onClick={() => deleteSection(section.id)}
-                  className="text-blue-200 hover:text-white text-sm">× 削除</button>
+                  className="text-blue-200 hover:text-white text-sm"
+                  title="この工事区分を削除">× 削除</button>
               </div>
               <div className="bg-white border border-t-0 rounded-b overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="p-2 text-left w-10">操作</th>
+                      <th className="p-2 text-left w-10" title="行操作ボタン（上挿入/品目選択/削除/下挿入）">操作</th>
                       <th className="p-2 text-left w-44">名称</th>
                       <th className="p-2 text-left w-36">仕様</th>
                       <th className="p-2 text-right w-16">数量</th>
@@ -873,11 +854,14 @@ export default function HistoryPage() {
                       <th className="p-2 text-right w-20">単価</th>
                       <th className="p-2 text-right w-22">金額</th>
                       <th className="p-2 text-left w-28">備考</th>
+                      {/* ▼ V6.0.1: 夜搬列 */}
+                      <th className="p-2 text-center w-12" title="夜=夜間作業チェック / 搬=搬入費除外（赤で除外）">夜搬</th>
                     </tr>
                   </thead>
                   <tbody>
                     {section.rows.map((row, rowIdx) => (
                       <tr key={row.id} className="border-t align-top">
+                        {/* 操作列 */}
                         <td className="p-1 align-top">
                           <div className="flex flex-col gap-0.5 items-center pt-1">
                             {rowIdx === 0 && (
@@ -889,17 +873,18 @@ export default function HistoryPage() {
                             <button
                               onClick={() => openPopup(section.id, row.id, section.name)}
                               className="w-7 h-7 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm"
-                              title="品目選択">📋</button>
+                              title="品目選択ポップアップを開く">📋</button>
                             <button
                               onClick={() => deleteRow(section.id, row.id)}
                               className="w-7 h-6 bg-red-100 hover:bg-red-200 text-red-600 rounded text-xs font-bold"
-                              title="行削除">➖</button>
+                              title="この行を削除">➖</button>
                             <button
                               onClick={() => insertRowAfter(section.id, row.id, section.name)}
                               className="w-7 h-6 bg-green-100 hover:bg-green-200 text-green-700 rounded text-xs font-bold"
                               title="下に行挿入">＋</button>
                           </div>
                         </td>
+                        {/* 名称 */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 mb-1" value={row.name1} placeholder="名称1段目"
                             onChange={e => updateRow(section.id, row.id, 'name1', e.target.value)} />
@@ -908,6 +893,7 @@ export default function HistoryPage() {
                           <input className="w-full border rounded px-2 py-1" value={row.name3} placeholder="名称3段目"
                             onChange={e => updateRow(section.id, row.id, 'name3', e.target.value)} />
                         </td>
+                        {/* 仕様 */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 mb-1" value={row.spec1} placeholder="仕様1段目"
                             onChange={e => updateRow(section.id, row.id, 'spec1', e.target.value)} />
@@ -916,10 +902,16 @@ export default function HistoryPage() {
                           <input className="w-full border rounded px-2 py-1" value={row.spec3} placeholder="仕様3段目"
                             onChange={e => updateRow(section.id, row.id, 'spec3', e.target.value)} />
                         </td>
+                        {/* ⑤ 数量: onBlurでtoFixed(1)整形 */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 text-right" value={row.quantity} type="number" step="0.1"
-                            onChange={e => updateRow(section.id, row.id, 'quantity', e.target.value)} />
+                            onChange={e => updateRow(section.id, row.id, 'quantity', e.target.value)}
+                            onBlur={e => {
+                              const v = parseFloat(e.target.value)
+                              if (!isNaN(v)) updateRow(section.id, row.id, 'quantity', v.toFixed(1))
+                            }} />
                         </td>
+                        {/* 単位 */}
                         <td className="p-1">
                           <select className="w-full border rounded px-1 py-1 mb-1" value={row.unit}
                             onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)}>
@@ -929,6 +921,7 @@ export default function HistoryPage() {
                           <input className="w-full border rounded px-2 py-1 text-xs" value={row.unit} placeholder="自由入力"
                             onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)} />
                         </td>
+                        {/* 単価 */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 text-right" value={row.unit_price} type="number"
                             onChange={e => updateRow(section.id, row.id, 'unit_price', e.target.value)} />
@@ -936,7 +929,9 @@ export default function HistoryPage() {
                             <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
                           )}
                         </td>
+                        {/* 金額 */}
                         <td className="p-1 text-right pr-2 pt-2">{row.amount.toLocaleString()}</td>
+                        {/* 備考 */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 mb-1" value={row.note1} placeholder="備考1段目"
                             onChange={e => updateRow(section.id, row.id, 'note1', e.target.value)} />
@@ -944,6 +939,46 @@ export default function HistoryPage() {
                             onChange={e => updateRow(section.id, row.id, 'note2', e.target.value)} />
                           <input className="w-full border rounded px-2 py-1" value={row.note3} placeholder="備考3段目"
                             onChange={e => updateRow(section.id, row.id, 'note3', e.target.value)} />
+                        </td>
+                        {/* ④ 夜搬列 */}
+                        <td className="p-1 align-top">
+                          <div className="flex flex-col gap-1 items-center pt-1">
+                            {/* 夜: 夜間作業チェック（青＝対象） */}
+                            <button
+                              onClick={() => toggleRowBool(section.id, row.id, 'nightWork')}
+                              className={`w-8 h-6 rounded text-xs font-bold transition-colors ${
+                                row.nightWork
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title="夜間作業チェック（青＝夜間割増費対象）">夜</button>
+                            {/* 搬: 搬入費除外チェック（赤＝除外） */}
+                            <button
+                              onClick={() => toggleRowBool(section.id, row.id, 'excludeHakobi')}
+                              className={`w-8 h-6 rounded text-xs font-bold transition-colors ${
+                                row.excludeHakobi
+                                  ? 'bg-red-500 text-white'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title="搬入費から除外（赤＝除外中）">搬</button>
+                          </div>
+                          {/* 夜チェック時のみ: 労務費率・深夜割増率入力欄展開 */}
+                          {row.nightWork && (
+                            <div className="flex flex-col gap-0.5 mt-1 items-center">
+                              <span className="text-xs text-gray-400">労%</span>
+                              <input type="number"
+                                className="w-10 border rounded px-1 py-0.5 text-xs text-right bg-blue-50"
+                                value={row.laborRate} min="40" max="80" step="5"
+                                title="労務費率（40〜80%）"
+                                onChange={e => updateRow(section.id, row.id, 'laborRate', e.target.value)} />
+                              <span className="text-xs text-gray-400">深%</span>
+                              <input type="number"
+                                className="w-10 border rounded px-1 py-0.5 text-xs text-right bg-blue-50"
+                                value={row.nightDeepRate} min="0" max="30" step="5"
+                                title="深夜割増率（0〜30%）"
+                                onChange={e => updateRow(section.id, row.id, 'nightDeepRate', e.target.value)} />
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -958,298 +993,281 @@ export default function HistoryPage() {
                       ))
                       openPopup(section.id, row.id, section.name)
                     }}
-                    className="text-blue-600 hover:text-blue-800 text-sm">+ 行追加</button>
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                    title="この工事区分に行を追加">+ 行追加</button>
                   <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
                 </div>
               </div>
-            </div>
-          ))}
 
-          <div className="mb-6">
-            {!showSectionInput ? (
-              <button onClick={() => setShowSectionInput(true)}
-                className="w-full border-2 border-dashed border-blue-300 text-blue-600 py-3 rounded-lg hover:bg-blue-50">
-                + 工事区分を追加
-              </button>
-            ) : (
-              <div className="bg-white rounded-lg border p-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">工事区分を選択または入力</p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {PRESET_SECTIONS.filter(p => !sections.find(s => s.name === p)).map(p => (
-                    <button key={p} onClick={() => addSection(p)}
-                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm">{p}</button>
-                  ))}
+              {/* ④ 小計下: 夜間割増費・搬入費 */}
+              <div className="border border-t-0 bg-blue-50 px-4 divide-y divide-blue-100">
+                {nightCost > 0 && (
+                  <div className="flex justify-between items-center py-1 text-sm text-blue-700">
+                    <span className="text-xs">　夜間割増費</span>
+                    <span>{nightCost.toLocaleString()} 円</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center py-1 text-sm text-gray-600">
+                  <span className="text-xs">　搬入費（2%）</span>
+                  <span>{hakobiCost.toLocaleString()} 円</span>
                 </div>
-                <div className="flex gap-2">
-                  <input className="flex-1 border rounded px-3 py-2 text-sm" value={customSection} placeholder="その他（自由入力）"
-                    onChange={e => setCustomSection(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && addSection(customSection)} />
-                  <button onClick={() => addSection(customSection)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">追加</button>
-                  <button onClick={() => setShowSectionInput(false)} className="text-gray-500 px-3 py-2 text-sm">キャンセル</button>
+              </div>
+            </div>
+          )
+        })}
+
+        {/* 工事区分追加ボタン */}
+        <div className="mb-6">
+          {!showSectionInput ? (
+            <button onClick={() => setShowSectionInput(true)}
+              className="w-full border-2 border-dashed border-blue-300 text-blue-600 py-3 rounded-lg hover:bg-blue-50"
+              title="新しい工事区分を追加">
+              + 工事区分を追加
+            </button>
+          ) : (
+            <div className="bg-white rounded-lg border p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">工事区分を選択または入力</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {PRESET_SECTIONS.filter(p => !sections.find(s => s.name === p)).map(p => (
+                  <button key={p} onClick={() => addSection(p)}
+                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm">{p}</button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input className="flex-1 border rounded px-3 py-2 text-sm" value={customSection} placeholder="その他（自由入力）"
+                  onChange={e => setCustomSection(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addSection(customSection)} />
+                <button onClick={() => addSection(customSection)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">追加</button>
+                <button onClick={() => setShowSectionInput(false)} className="text-gray-500 px-3 py-2 text-sm">キャンセル</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {renderPopup()}
+    </main>
+  )
+
+  // ==================== history画面 JSX ====================
+  const renderHistory = () => (
+    <main className="min-h-screen bg-gray-50">
+      <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1">
+        <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
+        <div className="relative">
+          <button onClick={() => setShowTitleList(!showTitleList)}
+            className="border border-blue-300 rounded px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 font-medium whitespace-nowrap"
+            title="件名一覧を開く">
+            件名▼
+          </button>
+          {showTitleList && (
+            <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-30 min-w-[300px] max-h-[60vh] overflow-y-auto">
+              {filteredEstimates.map((e, i) => (
+                <div key={e.id}>
+                  <div onClick={() => handleTitleSelect(e)}
+                    className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate?.id === e.id ? 'bg-blue-100 font-medium' : ''}`}>
+                    <div className="font-medium">{e.title}</div>
+                    <div className="text-xs text-gray-500">{e.date} / {e.building} / {e.staff}</div>
+                  </div>
+                  {i < filteredEstimates.length - 1 && <div className="h-2 bg-gray-50" />}
                 </div>
+              ))}
+              {filteredEstimates.length === 0 && (
+                <div className="px-4 py-3 text-sm text-gray-400">該当なし</div>
+              )}
+            </div>
+          )}
+        </div>
+        <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
+          onChange={e => handleFilterChange({ ...filters, staff: e.target.value })}>
+          <option value="">担当者▼</option>
+          {staffList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
+          onChange={e => handleFilterChange({ ...filters, building: e.target.value })}>
+          <option value="">ビル名▼</option>
+          {buildings.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
+          onChange={e => handleFilterChange({ ...filters, workType: e.target.value })}>
+          <option value="">種別▼</option>
+          {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
+        </select>
+        <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
+          onChange={e => handleFilterChange({ ...filters, year: e.target.value })}>
+          <option value="">年▼</option>
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+
+        {/* ① 2画面OFFの時のみ Excel・コピー編集ボタン表示 */}
+        {!is2Pane && (
+          <button onClick={handleExportHistory}
+            className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap"
+            title="表示中の見積をExcel出力">
+            Excel
+          </button>
+        )}
+        <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate || loading}
+          className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap"
+          title={is2Pane ? '右画面にコピー編集を表示' : '選択中の見積をコピーして編集'}>
+          {copying || loading ? '読込中...' : is2Pane ? '→編集' : 'コピー編集'}
+        </button>
+
+        {/* ① 2画面トグルボタン（880→2画面に変更） */}
+        <button onClick={() => setIs2Pane(!is2Pane)}
+          style={{
+            backgroundColor: is2Pane ? '#2563eb' : '#ffffff',
+            color: is2Pane ? '#ffffff' : '#2563eb',
+            border: '1px solid #2563eb',
+            borderRadius: '4px', padding: '2px 8px',
+            fontSize: '12px', fontWeight: 'bold',
+            cursor: 'pointer', whiteSpace: 'nowrap',
+          }}
+          title="2画面モード（左:表示 右:コピー編集）">
+          2画面
+        </button>
+
+        <button onClick={resetFilters}
+          className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap"
+          title="フィルターをリセット">
+          ←
+        </button>
+      </div>
+
+      {selectedEstimate && (
+        <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap">
+          <span>{selectedEstimate.date}</span>
+          <span>{selectedEstimate.building}</span>
+          <span className="font-medium">{selectedEstimate.title}</span>
+          <span>{selectedEstimate.staff}</span>
+          <span>{selectedEstimate.work_type}</span>
+        </div>
+      )}
+
+      <div className="p-4">
+        {loading ? (
+          <div className="text-center py-8 text-gray-400">読み込み中...</div>
+        ) : (
+          <>
+            {sectionNames.map(sectionName => {
+              const { sectionItems, expenses, subtotal: subtotalVal, total } = getSectionData(sectionName)
+              return (
+                <div key={sectionName} className="mb-6">
+                  <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
+                    <span className="font-bold text-sm">{sectionName}</span>
+                    <span className="text-xs">小計 {fmt(subtotalVal)} 円</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
+                      <colgroup>
+                        <col style={{width: colWidths.no}} />
+                        <col style={{width: colWidths.name}} />
+                        <col style={{width: colWidths.spec}} />
+                        <col style={{width: colWidths.qty}} />
+                        <col style={{width: colWidths.unit}} />
+                        <col style={{width: colWidths.price}} />
+                        <col style={{width: colWidths.amount}} />
+                        <col style={{width: colWidths.note}} />
+                      </colgroup>
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="p-1 text-center">No.</th>
+                          <th className="p-1 text-left">名称</th>
+                          <th className="p-1 text-left">仕様</th>
+                          <th className="p-1 text-right">数量</th>
+                          <th className="p-1 text-center">単位</th>
+                          <th className="p-1 text-right">単価</th>
+                          <th className="p-1 text-right">金額</th>
+                          <th className="p-1 text-left">備考</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sectionItems.map(item => (
+                          <tr key={item.id} className="border-t align-top">
+                            <td className="p-1 text-center">{String(item.row_order).slice(0,2)}</td>
+                            <td className="p-1 overflow-hidden">
+                              {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
+                              {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
+                              {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
+                            </td>
+                            <td className="p-1 overflow-hidden">
+                              {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
+                              {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
+                              {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
+                            </td>
+                            <td className="p-1 text-right">{item.quantity?.toFixed(1)}</td>
+                            <td className="p-1 text-center">{t(item.unit,2)}</td>
+                            <td className="p-1 text-right">{fmt(item.unit_price)}</td>
+                            <td className="p-1 text-right">{fmt(item.amount)}</td>
+                            <td className="p-1 overflow-hidden">
+                              {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
+                              {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
+                              {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
+                            </td>
+                          </tr>
+                        ))}
+                        {expenses.map(exp => (
+                          <tr key={exp.id} className="border-t bg-gray-50 align-top">
+                            <td className="p-1"></td>
+                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.name1,12)}</td>
+                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.spec1,16)}</td>
+                            <td className="p-1 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
+                            <td className="p-1 text-center text-gray-600">{t(exp.unit,2)}</td>
+                            <td className="p-1 text-right text-gray-600">{fmt(exp.unit_price)}</td>
+                            <td className="p-1 text-right text-gray-600">{fmt(exp.amount)}</td>
+                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.note1,7)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="bg-gray-200 border border-t-0 px-4 py-1.5 flex justify-between font-bold text-sm">
+                    <span>{sectionName}　合計</span>
+                    <span>{fmt(total)} 円</span>
+                  </div>
+                </div>
+              )
+            })}
+            {sectionNames.length > 0 && (
+              <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
+                <span className="text-lg font-bold">建築工事の計</span>
+                <span className="text-xl font-bold">{fmt(historyGrandTotal)} 円</span>
               </div>
             )}
-          </div>
-
-          {/* ▼ V5.0.3: フッター廃止（ヘッダーに移動済み） */}
-        </div>
-
-        {popup && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b bg-blue-800 rounded-t-lg">
-                <h3 className="text-white font-bold">品目選択 - {popup.workSection}</h3>
-                <button onClick={() => setPopup(null)} className="text-white hover:text-blue-200 text-xl">×</button>
-              </div>
-              <div className="flex border-b">
-                <button
-                  onClick={() => handleTabChange('history')}
-                  className={`flex-1 py-2 text-sm font-medium ${popupTab === 'history' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
-                  過去見積
-                </button>
-                <button
-                  onClick={() => handleTabChange('master')}
-                  className={`flex-1 py-2 text-sm font-medium ${popupTab === 'master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
-                  単価マスタ
-                </button>
-              </div>
-              {popupTab === 'master' && (
-                <div className="px-3 pt-2 flex items-center gap-2">
-                  <span className="text-xs text-gray-500">年度:</span>
-                  <select className="border rounded px-2 py-1 text-xs"
-                    value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
-                    {availableYears.map(y => <option key={y} value={y}>{y}年度</option>)}
-                  </select>
-                </div>
-              )}
-              <div className="p-4 flex-1">
-                {popupLoading ? (
-                  <div className="p-8 text-center text-gray-400">読み込み中...</div>
-                ) : popupTab === 'history' ? (
-                  uniquePopupItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400">このカテゴリの品目データがありません</div>
-                  ) : (
-                    <select size={10} className="w-full border rounded text-sm"
-                      onChange={e => {
-                        const item = uniquePopupItems[Number(e.target.value)]
-                        if (item) selectPopupItem(item)
-                      }}>
-                      {uniquePopupItems.map((item, idx) => (
-                        <option key={item.id} value={idx}>
-                          {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{item.unit_price ? ` / ${item.unit_price.toLocaleString()}円` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                ) : (
-                  filteredMasterItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400">品目データがありません</div>
-                  ) : (
-                    <select size={10} className="w-full border rounded text-sm"
-                      onChange={e => {
-                        const item = filteredMasterItems[Number(e.target.value)]
-                        if (item) selectMasterItem(item)
-                      }}>
-                      {filteredMasterItems.map((item, idx) => {
-                        const priceObj = item.item_prices?.find((p: {fiscal_year: number; price1: number}) => p.fiscal_year === fiscalYear)
-                        return (
-                          <option key={item.id} value={idx}>
-                            {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{priceObj ? ` / ${priceObj.price1.toLocaleString()}円` : ''}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  )
-                )}
-              </div>
-              <div className="px-4 py-2 border-t text-xs text-gray-400 text-right">
-                {popupTab === 'history' ? uniquePopupItems.length : filteredMasterItems.length}件表示
-              </div>
-            </div>
-          </div>
+          </>
         )}
-      </main>
+      </div>
+    </main>
+  )
+
+  // ==================== ① 2画面 or 通常レイアウト ====================
+  if (is2Pane) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        {/* 左: history */}
+        <div className="w-1/2 overflow-y-auto border-r">
+          {renderHistory()}
+        </div>
+        {/* 右: コピー編集 or プレースホルダー */}
+        <div className="w-1/2 overflow-y-auto">
+          {showEstimate && copyInfo ? (
+            renderEstimate()
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
+              <span className="text-4xl">→</span>
+              <span>左の「→編集」ボタンを押すと</span>
+              <span>ここにコピー編集が表示されます</span>
+            </div>
+          )}
+        </div>
+      </div>
     )
   }
 
-  // ==================== history画面 ====================
-  return (
-    <div style={is880 ? { maxWidth: '880px', margin: '0 auto' } : {}}>
-      <main className="min-h-screen bg-gray-50">
-        <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1">
-          <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
-          <div className="relative">
-            <button onClick={() => setShowTitleList(!showTitleList)}
-              className="border border-blue-300 rounded px-2 py-0.5 text-xs bg-blue-50 hover:bg-blue-100 font-medium whitespace-nowrap">
-              件名▼
-            </button>
-            {showTitleList && (
-              <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-30 min-w-[300px] max-h-[60vh] overflow-y-auto">
-                {filteredEstimates.map((e, i) => (
-                  <div key={e.id}>
-                    <div onClick={() => handleTitleSelect(e)}
-                      className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate?.id === e.id ? 'bg-blue-100 font-medium' : ''}`}>
-                      <div className="font-medium">{e.title}</div>
-                      <div className="text-xs text-gray-500">{e.date} / {e.building} / {e.staff}</div>
-                    </div>
-                    {i < filteredEstimates.length - 1 && <div className="h-2 bg-gray-50" />}
-                  </div>
-                ))}
-                {filteredEstimates.length === 0 && (
-                  <div className="px-4 py-3 text-sm text-gray-400">該当なし</div>
-                )}
-              </div>
-            )}
-          </div>
-          <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.staff}
-            onChange={e => handleFilterChange({ ...filters, staff: e.target.value })}>
-            <option value="">担当者▼</option>
-            {staffList.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select className="border rounded px-1 py-0.5 text-xs w-24" value={filters.building}
-            onChange={e => handleFilterChange({ ...filters, building: e.target.value })}>
-            <option value="">ビル名▼</option>
-            {buildings.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-          <select className="border rounded px-1 py-0.5 text-xs w-20" value={filters.workType}
-            onChange={e => handleFilterChange({ ...filters, workType: e.target.value })}>
-            <option value="">種別▼</option>
-            {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
-          </select>
-          <select className="border rounded px-1 py-0.5 text-xs w-16" value={filters.year}
-            onChange={e => handleFilterChange({ ...filters, year: e.target.value })}>
-            <option value="">年▼</option>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <button onClick={handleExportHistory}
-            className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap">
-            Excel
-          </button>
-          <button onClick={handleCopyToEdit} disabled={copying || !selectedEstimate || loading}
-            className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap">
-            {copying || loading ? '読込中...' : 'コピー編集'}
-          </button>
-          <button onClick={() => setIs880(!is880)}
-            style={{
-              backgroundColor: is880 ? '#2563eb' : '#ffffff',
-              color: is880 ? '#ffffff' : '#2563eb',
-              border: '1px solid #2563eb',
-              borderRadius: '4px', padding: '2px 8px',
-              fontSize: '12px', fontWeight: 'bold',
-              cursor: 'pointer', whiteSpace: 'nowrap',
-            }}>
-            880
-          </button>
-          <button onClick={resetFilters}
-            className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap">
-            ←
-          </button>
-        </div>
+  // 通常モード
+  if (showEstimate && copyInfo) {
+    return renderEstimate()
+  }
 
-        {selectedEstimate && (
-          <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap">
-            <span>{selectedEstimate.date}</span>
-            <span>{selectedEstimate.building}</span>
-            <span className="font-medium">{selectedEstimate.title}</span>
-            <span>{selectedEstimate.staff}</span>
-            <span>{selectedEstimate.work_type}</span>
-          </div>
-        )}
-
-        <div className="p-4">
-          {loading ? (
-            <div className="text-center py-8 text-gray-400">読み込み中...</div>
-          ) : (
-            <>
-              {sectionNames.map(sectionName => {
-                const { sectionItems, expenses, subtotal: subtotalVal, total } = getSectionData(sectionName)
-                return (
-                  <div key={sectionName} className="mb-6">
-                    <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
-                      <span className="font-bold text-sm">{sectionName}</span>
-                      <span className="text-xs">小計 {fmt(subtotalVal)} 円</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
-                        <colgroup>
-                          <col style={{width: colWidths.no}} />
-                          <col style={{width: colWidths.name}} />
-                          <col style={{width: colWidths.spec}} />
-                          <col style={{width: colWidths.qty}} />
-                          <col style={{width: colWidths.unit}} />
-                          <col style={{width: colWidths.price}} />
-                          <col style={{width: colWidths.amount}} />
-                          <col style={{width: colWidths.note}} />
-                        </colgroup>
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="p-1 text-center">No.</th>
-                            <th className="p-1 text-left">名称</th>
-                            <th className="p-1 text-left">仕様</th>
-                            <th className="p-1 text-right">数量</th>
-                            <th className="p-1 text-center">単位</th>
-                            <th className="p-1 text-right">単価</th>
-                            <th className="p-1 text-right">金額</th>
-                            <th className="p-1 text-left">備考</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {sectionItems.map(item => (
-                            <tr key={item.id} className="border-t align-top">
-                              <td className="p-1 text-center">{String(item.row_order).slice(0,2)}</td>
-                              <td className="p-1 overflow-hidden">
-                                {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
-                                {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
-                                {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
-                              </td>
-                              <td className="p-1 overflow-hidden">
-                                {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
-                                {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
-                                {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
-                              </td>
-                              <td className="p-1 text-right">{item.quantity?.toFixed(1)}</td>
-                              <td className="p-1 text-center">{t(item.unit,2)}</td>
-                              <td className="p-1 text-right">{fmt(item.unit_price)}</td>
-                              <td className="p-1 text-right">{fmt(item.amount)}</td>
-                              <td className="p-1 overflow-hidden">
-                                {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
-                                {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
-                                {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
-                              </td>
-                            </tr>
-                          ))}
-                          {expenses.map(exp => (
-                            <tr key={exp.id} className="border-t bg-gray-50 align-top">
-                              <td className="p-1"></td>
-                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.name1,12)}</td>
-                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.spec1,16)}</td>
-                              <td className="p-1 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
-                              <td className="p-1 text-center text-gray-600">{t(exp.unit,2)}</td>
-                              <td className="p-1 text-right text-gray-600">{fmt(exp.unit_price)}</td>
-                              <td className="p-1 text-right text-gray-600">{fmt(exp.amount)}</td>
-                              <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.note1,7)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="bg-gray-200 border border-t-0 px-4 py-1.5 flex justify-between font-bold text-sm">
-                      <span>{sectionName}　合計</span>
-                      <span>{fmt(total)} 円</span>
-                    </div>
-                  </div>
-                )
-              })}
-              {sectionNames.length > 0 && (
-                <div className="bg-blue-900 text-white px-6 py-4 rounded flex justify-between items-center mt-4 mb-8">
-                  <span className="text-lg font-bold">建築工事の計</span>
-                  <span className="text-xl font-bold">{fmt(historyGrandTotal)} 円</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </main>
-    </div>
-  )
+  return renderHistory()
 }
