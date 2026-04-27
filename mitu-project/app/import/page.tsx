@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.0
+// バージョン: V1.1.1
 // 更新: 2026/04/27
-// 変更: V1.1.0 明細行の金額をH列直接使用に変更（単価×数量から変更）
+// 変更: V1.1.1 1ページ目スキップを工事区分ヘッダー検出方式に変更
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.0'
+const VERSION = 'V1.1.1'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -114,25 +114,25 @@ export default function ImportPage() {
         const h = row[7]  // H列: 金額
         const ii = String(row[8] || '').trim() // I列: 備考
 
-        // ページ番号行: P.2が出たら明細開始
-        if (isPageNum(ii) && !c) {
-          if (!page2Started) page2Started = true
-          continue
-        }
-        // P.2が出るまでスキップ（1ページ目のサマリー）
-        if (!page2Started) continue
+        // ページ番号行スキップ
+        if (isPageNum(ii) && !c) continue
         // ヘッダー行スキップ
         if (isHeaderRow(c)) continue
         // 空行スキップ
         if (!c && !d && !e && !g && !h) continue
 
         // 工事区分ヘッダー（B列が数字でC列に名称、数量なし）
+        // → ここで初めてpage2Started=true（1ページ目サマリーをスキップ）
         if (typeof b === 'number' && c && !e && !g) {
+          page2Started = true
           currentSection = c
           rowOrder = 0
-          afterSubtotal = false  // 新しい工事区分に入ったらリセット
+          afterSubtotal = false
           continue
         }
+
+        // 工事区分ヘッダーが出るまでスキップ（1ページ目のサマリー）
+        if (!page2Started) continue
 
         // 合計行: Excelの「〇〇の計」→ マッチング用に記録してスキップ
         if (isSectionTotalRow(c, d) && currentSection && h !== null) {
