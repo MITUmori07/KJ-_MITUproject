@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.7
+// バージョン: V1.1.8
 // 更新: 2026/04/27
-// 変更: V1.1.7 明細シート自動選択（建築・工事・明細シートを優先）
+// 変更: V1.1.8 source_flag:1をINSERTに追加
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.7'
+const VERSION = 'V1.1.8'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -350,6 +350,7 @@ export default function ImportPage() {
         amount: r.amount,
         note1: r.note1 || null, note2: r.note2 || null, note3: r.note3 || null,
         is_matched: false,
+        source_flag: 1,
       }))
 
       const { error: itemsError } = await supabase
