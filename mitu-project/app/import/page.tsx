@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.4
+// バージョン: V1.1.5
 // 更新: 2026/04/27
-// 変更: V1.1.4 B列数値判定を文字列にも対応
+// 変更: V1.1.5 B列生値デバッグ追加
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.4'
+const VERSION = 'V1.1.5'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -218,7 +218,9 @@ export default function ImportPage() {
       }
 
       if (parsed.length === 0) {
-        const debugInfo = `行数:${rows.length} page2Started:${page2Started} section:${currentSection}`
+        // B列の最初の10件を確認
+        const bVals = rows.slice(0, 40).map((r, i) => `行${i+1}:B=${JSON.stringify(r[1])}`).join(' / ')
+        const debugInfo = `行数:${rows.length} page2Started:${page2Started} B列サンプル: ${bVals}`
         setErrorMsg('明細データが見つかりませんでした。' + debugInfo)
         return
       }
