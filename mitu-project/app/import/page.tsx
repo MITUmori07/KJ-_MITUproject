@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.4
+// バージョン: V1.0.5
 // 更新: 2026/04/27
-// 変更: V1.0.4 構文エラー修正（})}重複）
+// 変更: V1.0.5 1ページ目サマリーをスキップ
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.4'
+const VERSION = 'V1.0.5'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -98,6 +98,8 @@ export default function ImportPage() {
       let rowOrder = 0
       // 小計が出たら経費フェーズに切り替え
       let afterSubtotal = false
+      // P.2が出るまで1ページ目をスキップ
+      let page2Started = false
 
       const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
 
@@ -112,8 +114,13 @@ export default function ImportPage() {
         const h = row[7]  // H列: 金額
         const ii = String(row[8] || '').trim() // I列: 備考
 
-        // ページ番号行スキップ
-        if (isPageNum(ii) && !c) continue
+        // ページ番号行: P.2が出たら明細開始
+        if (isPageNum(ii) && !c) {
+          if (!page2Started) page2Started = true
+          continue
+        }
+        // P.2が出るまでスキップ（1ページ目のサマリー）
+        if (!page2Started) continue
         // ヘッダー行スキップ
         if (isHeaderRow(c)) continue
         // 空行スキップ
