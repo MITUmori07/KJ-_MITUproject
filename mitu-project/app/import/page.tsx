@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.3
+// バージョン: V1.0.4
 // 更新: 2026/04/27
-// 変更: V1.0.3 小計フェーズ切替・マッチング合計修正
+// 変更: V1.0.4 構文エラー修正（})}重複）
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.3'
+const VERSION = 'V1.0.4'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -573,7 +573,6 @@ export default function ImportPage() {
               </div>
             </div>
           )
-        })}
         })}
       </div>
     </main>
