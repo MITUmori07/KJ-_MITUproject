@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.0.9
+// バージョン: V1.1.0
 // 更新: 2026/04/27
-// 変更: V1.0.9 プレビュー画面にVERSION表示追加
+// 変更: V1.1.0 明細行の金額をH列直接使用に変更（単価×数量から変更）
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.0.9'
+const VERSION = 'V1.1.0'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -183,19 +183,21 @@ export default function ImportPage() {
         }
 
         // 明細行（小計より上の全行）
+        // 金額はH列を直接使用（単価×数量≠金額の行が存在するため）
         if (c) {
           const [n1, n2, n3] = split3(c)
           const [s1, s2, s3] = split3(d)
           const [o1, o2, o3] = split3(ii)
           const qty = e !== null && e !== undefined ? Number(e) : null
           const price = g !== null && g !== undefined ? Number(g) : null
-          const amount = qty !== null && price !== null ? Math.round(qty * price) : 0
+          // H列（金額）を直接使用。H列が空の場合のみ数量×単価で計算
+          const hVal = h !== null && h !== undefined && !isNaN(Number(h)) ? Number(h) : null
+          const amount = hVal !== null ? Math.round(hVal) : (qty !== null && price !== null ? Math.round(qty * price) : 0)
 
-          const warning = !currentSection || qty === null || price === null
+          const warning = !currentSection || qty === null
           const msgs: string[] = []
           if (!currentSection) msgs.push('工事区分不明')
           if (qty === null) msgs.push('数量なし')
-          if (price === null) msgs.push('単価なし')
 
           rowOrder++
           parsed.push({
