@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.9
+// バージョン: V6.1.0
 // 更新: 2026/04/28
-// 変更: V6.0.9 4択モーダルD実装（途中保存から再開・drafts一覧表示）
+// 変更: V6.1.0 historyに新規作成ボタン追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.9'
+const VERSION = 'V6.1.0'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -130,6 +130,19 @@ export default function HistoryPage() {
       return true
     })
     if (f.length > 0) loadItems(f[0])
+  }
+
+  // 新規作成
+  const handleNewEstimate = () => {
+    if (copyInfo) { setShowDraftWarningModal(true); return }
+    setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [] }])
+    setCopyInfo({
+      building: '新宿FT', staff: '', work_type: 'A工事',
+      draft_id: null, date: '', title: '',
+      source_estimate_id: null,
+    })
+    setCopyMode(null)
+    setShowEstimate(true)
   }
 
   // ② コピーボタン押下
@@ -1010,6 +1023,9 @@ export default function HistoryPage() {
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap"
             title="Excel出力">Excel</button>
         )}
+        <button onClick={handleNewEstimate}
+          className="bg-teal-600 text-white px-2 py-0.5 rounded text-xs hover:bg-teal-700 whitespace-nowrap"
+          title="新規で明細を作成">新規作成</button>
         {/* ② コピーボタン → 分岐モーダルへ */}
         <button onClick={handleCopyButtonClick} disabled={copying || !selectedEstimate || loading}
           className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap"
