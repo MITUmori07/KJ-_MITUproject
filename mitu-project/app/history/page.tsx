@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.7
+// バージョン: V6.1.8
 // 更新: 2026/04/28
-// 変更: V6.1.7 estimate画面に2画面トグルボタン追加・historyの2画面ボタン2画面時非表示
+// 変更: V6.1.8 estimate画面の2画面ボタンを3行目保存左横に移動・color変更・ボタンtitle修正
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.7'
+const VERSION = 'V6.1.8'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -771,16 +771,6 @@ export default function HistoryPage() {
           <button onClick={() => { setShowEstimate(false); setSections([]); setCopyInfo(null); setCopyMode(null) }}
             className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs"
             title="history画面に戻る">← 戻る</button>
-          {/* 1画面⇔2画面トグル */}
-          {is2Pane ? (
-            <button onClick={() => setIs2Pane(false)}
-              className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs font-medium"
-              title="1画面モードに戻る（入力データは保持）">1画面</button>
-          ) : (
-            <button onClick={() => setIs2Pane(true)}
-              style={{ backgroundColor:'#ffffff', color:'#2563eb', border:'1px solid #2563eb', borderRadius:'4px', padding:'2px 8px', fontSize:'12px', fontWeight:'bold', cursor:'pointer' }}
-              title="2画面モードへ">2画面</button>
-          )}
           <span className="text-sm font-bold text-gray-800">明細入力</span>
           {modeBadge(copyMode)}
           <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
@@ -822,13 +812,23 @@ export default function HistoryPage() {
           <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
           <div className="ml-auto flex gap-2 items-center">
             {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
+            {/* 2画面トグル */}
+            {is2Pane ? (
+              <button onClick={() => setIs2Pane(false)}
+                className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs font-bold"
+                title="1画面モードに切り替え">1画面</button>
+            ) : (
+              <button onClick={() => setIs2Pane(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold"
+                title="2画面モードに切り替え">2画面</button>
+            )}
             <button onClick={saveDraft} disabled={saving}
               className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50"
-              title="保存（日付・件名未入力でも保存可）">
+              title="作業中のデータを一時保存。日付・件名なしでも保存可">
               {saving ? '保存中...' : '保存'}</button>
             <button onClick={handleConfirm} disabled={confirming}
               className="bg-red-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50"
-              title="確定してhistoryに登録（日付・件名必須）">
+              title="見積を完成させて一覧に登録します。日付・件名が必要。">
               {confirming ? '確定中...' : '確定'}</button>
             <button onClick={handleExport}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
