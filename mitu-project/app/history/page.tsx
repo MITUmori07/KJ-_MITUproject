@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.0
+// バージョン: V6.1.1
 // 更新: 2026/04/28
-// 変更: V6.1.0 historyに新規作成ボタン追加
+// 変更: V6.1.1 ポップアップに直接入力タブ追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.0'
+const VERSION = 'V6.1.1'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -94,11 +94,12 @@ export default function HistoryPage() {
   const [draftList, setDraftList] = useState<Draft[]>([])
   // ポップアップ
   const [popup, setPopup] = useState<{ sectionId:string; rowId:string; workSection:string }|null>(null)
-  const [popupTab, setPopupTab] = useState<'history'|'master'>('history')
+  const [popupTab, setPopupTab] = useState<'history'|'master'|'direct'>('history')
   const [popupItems, setPopupItems] = useState<PopupItem[]>([])
   const [masterItems, setMasterItems] = useState<MasterItem[]>([])
   const [popupLoading, setPopupLoading] = useState(false)
   const [popupSearch] = useState('')
+  const [directInput, setDirectInput] = useState({ name1:'', spec1:'', unit:'', unit_price:'' })
   const [fiscalYear, setFiscalYear] = useState<number>(2026)
   const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
   const [currentRowName, setCurrentRowName] = useState('')
@@ -339,7 +340,7 @@ export default function HistoryPage() {
     setPopupItems(filtered); setPopupLoading(false)
   }
 
-  const handleTabChange = async (tab: 'history'|'master') => {
+  const handleTabChange = async (tab: 'history'|'master'|'direct') => {
     setPopupTab(tab)
     if (tab === 'master') {
       setPopupLoading(true)
@@ -682,6 +683,9 @@ export default function HistoryPage() {
           <button onClick={() => handleTabChange('master')}
             className={`flex-1 py-2 text-sm font-medium ${popupTab==='master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
             単価マスタ</button>
+          <button onClick={() => handleTabChange('direct')}
+            className={`flex-1 py-2 text-sm font-medium ${popupTab==='direct' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
+            直接入力</button>
         </div>
         {popupTab === 'master' && (
           <div className="px-3 pt-2 flex items-center gap-2">
@@ -693,7 +697,51 @@ export default function HistoryPage() {
         )}
         <div className="p-4 flex-1">
           {popupLoading ? <div className="p-8 text-center text-gray-400">読み込み中...</div>
-          : popupTab === 'history' ? (
+          : popupTab === 'direct' ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-500">名称<span className="text-red-400">*</span></label>
+                <input className="border rounded px-3 py-2 text-sm" value={directInput.name1}
+                  placeholder="名称を入力" onChange={e => setDirectInput(p => ({ ...p, name1: e.target.value }))} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-500">仕様</label>
+                <input className="border rounded px-3 py-2 text-sm" value={directInput.spec1}
+                  placeholder="仕様を入力" onChange={e => setDirectInput(p => ({ ...p, spec1: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs text-gray-500">単位</label>
+                  <select className="border rounded px-2 py-2 text-sm" value={directInput.unit}
+                    onChange={e => setDirectInput(p => ({ ...p, unit: e.target.value }))}>
+                    <option value="">選択</option>
+                    {units.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1 flex-1">
+                  <label className="text-xs text-gray-500">単価</label>
+                  <input type="number" className="border rounded px-3 py-2 text-sm text-right" value={directInput.unit_price}
+                    placeholder="0" onChange={e => setDirectInput(p => ({ ...p, unit_price: e.target.value }))} />
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!directInput.name1.trim()) { alert('名称を入力してください'); return }
+                  if (!popup) return
+                  applyItemToRow({
+                    name1: directInput.name1, name2: '', name3: '',
+                    spec1: directInput.spec1, spec2: '', spec3: '',
+                    unit: directInput.unit, unit_price: directInput.unit_price,
+                    note1: '', note2: '', note3: '',
+                    source_estimate_item_id: null,
+                  }, popup.sectionId, popup.rowId)
+                  setDirectInput({ name1:'', spec1:'', unit:'', unit_price:'' })
+                }}
+                className="bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700">
+                この内容で追加
+              </button>
+            </div>
+          ) : popupTab === 'history' ? (
             uniquePopupItems.length === 0
               ? <div className="p-8 text-center text-gray-400">このカテゴリの品目データがありません</div>
               : <select size={10} className="w-full border rounded text-sm"
