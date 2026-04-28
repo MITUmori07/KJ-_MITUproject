@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.6b
+// バージョン: V6.1.7
 // 更新: 2026/04/28
-// 変更: V6.1.6b fix: handleNewEstimateのsetShowDraftWarningModal削除
+// 変更: V6.1.7 estimate画面に2画面トグルボタン追加・historyの2画面ボタン2画面時非表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.6b'
+const VERSION = 'V6.1.7'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -771,11 +771,15 @@ export default function HistoryPage() {
           <button onClick={() => { setShowEstimate(false); setSections([]); setCopyInfo(null); setCopyMode(null) }}
             className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs"
             title="history画面に戻る">← 戻る</button>
-          {/* ① 2画面時のみ「1画面」ボタン */}
-          {is2Pane && (
+          {/* 1画面⇔2画面トグル */}
+          {is2Pane ? (
             <button onClick={() => setIs2Pane(false)}
               className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs font-medium"
               title="1画面モードに戻る（入力データは保持）">1画面</button>
+          ) : (
+            <button onClick={() => setIs2Pane(true)}
+              style={{ backgroundColor:'#ffffff', color:'#2563eb', border:'1px solid #2563eb', borderRadius:'4px', padding:'2px 8px', fontSize:'12px', fontWeight:'bold', cursor:'pointer' }}
+              title="2画面モードへ">2画面</button>
           )}
           <span className="text-sm font-bold text-gray-800">明細入力</span>
           {modeBadge(copyMode)}
@@ -1070,11 +1074,13 @@ export default function HistoryPage() {
         <a href="/import"
           className="bg-purple-600 text-white px-2 py-0.5 rounded text-xs hover:bg-purple-700 whitespace-nowrap"
           title="Excelファイルを取り込む">取り込み</a>
-        <button onClick={() => setIs2Pane(!is2Pane)} style={{
-          backgroundColor: is2Pane ? '#2563eb' : '#ffffff', color: is2Pane ? '#ffffff' : '#2563eb',
-          border: '1px solid #2563eb', borderRadius: '4px', padding: '2px 8px',
-          fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap',
-        }} title="2画面モード">2画面</button>
+        {!is2Pane && (
+          <button onClick={() => setIs2Pane(true)} style={{
+            backgroundColor: '#ffffff', color: '#2563eb',
+            border: '1px solid #2563eb', borderRadius: '4px', padding: '2px 8px',
+            fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap',
+          }} title="2画面モード">2画面</button>
+        )}
         <button onClick={resetFilters}
           className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap"
           title="フィルターリセット">←</button>
