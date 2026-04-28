@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.5
+// バージョン: V6.1.6
 // 更新: 2026/04/28
-// 変更: V6.1.5 A/B/C選択時にdrafts自動INSERT復活（戻るボタンでデータ消えない）
+// 変更: V6.1.6 途中保存警告モーダル廃止・戻るボタンでメモリ完全クリア
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.5'
+const VERSION = 'V6.1.6'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -90,7 +90,6 @@ export default function HistoryPage() {
   // ② モーダル
   const [copyMode, setCopyMode] = useState<CopyMode|null>(null)
   const [showCopyModeModal, setShowCopyModeModal] = useState(false)
-  const [showDraftWarningModal, setShowDraftWarningModal] = useState(false)
   const [showDraftListModal, setShowDraftListModal] = useState(false)
   const [draftList, setDraftList] = useState<Draft[]>([])
   // ポップアップ
@@ -148,26 +147,13 @@ export default function HistoryPage() {
     setShowEstimate(true)
   }
 
-  // ② コピーボタン押下
+  // コピーボタン → 直接4択モーダルへ
   const handleCopyButtonClick = () => {
     if (!selectedEstimate) return
-    if (copyInfo) { setShowDraftWarningModal(true) }
-    else { setShowCopyModeModal(true) }
-  }
-  const handleContinueDraft = () => { setShowDraftWarningModal(false); setShowEstimate(true) }
-  const handleSaveAndSwitch = async () => {
-    await saveDraft()
-    setShowDraftWarningModal(false)
-    setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
-    setShowCopyModeModal(true)
-  }
-  const handleDiscardAndSwitch = () => {
-    setShowDraftWarningModal(false)
-    setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     setShowCopyModeModal(true)
   }
 
-  // ② A/B/Cモードでコピー実行（drafts自動保存なし・メモリのみ）
+  // ② A/B/Cモードでコピー実行
   const handleCopyToEdit = async (mode: CopyMode) => {
     if (!selectedEstimate) return
     setShowCopyModeModal(false); setCopyMode(mode); setCopying(true)
@@ -663,32 +649,6 @@ export default function HistoryPage() {
     </div>
   )
 
-  // ==================== ② 途中保存警告モーダル ====================
-  const renderDraftWarningModal = () => !showDraftWarningModal ? null : (
-    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
-        <div className="px-6 py-4 border-b">
-          <h2 className="text-base font-bold text-gray-800">⚠️ 途中保存中のファイルがあります</h2>
-          <p className="text-xs text-gray-500 mt-1">「{copyInfo?.title || 'コピー未入力'}」が保存されています</p>
-        </div>
-        <div className="p-4 flex flex-col gap-3">
-          <button onClick={handleContinueDraft}
-            className="w-full border-2 border-blue-300 rounded-lg px-4 py-3 text-sm font-bold text-blue-700 hover:bg-blue-50 transition-colors">
-            続きを編集
-          </button>
-          <button onClick={handleSaveAndSwitch}
-            className="w-full border-2 border-green-300 rounded-lg px-4 py-3 text-sm font-bold text-green-700 hover:bg-green-50 transition-colors">
-            今すぐ保存して切替
-          </button>
-          <button onClick={handleDiscardAndSwitch}
-            className="w-full border-2 border-red-300 rounded-lg px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
-            破棄して切替
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-
   // ==================== ポップアップ JSX ====================
   const renderPopup = () => !popup ? null : (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -809,7 +769,7 @@ export default function HistoryPage() {
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
         {/* 1行目 */}
         <div className="flex items-center gap-2 px-2 py-1 flex-wrap">
-          <button onClick={() => { setShowEstimate(false); setSections([]) }}
+          <button onClick={() => { setShowEstimate(false); setSections([]); setCopyInfo(null); setCopyMode(null) }}
             className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs"
             title="history画面に戻る">← 戻る</button>
           {/* ① 2画面時のみ「1画面」ボタン */}
@@ -1212,7 +1172,7 @@ export default function HistoryPage() {
   )
 
   // ==================== ① 2画面 or 通常レイアウト ====================
-  const modals = <>{renderCopyModeModal()}{renderDraftWarningModal()}{renderDraftListModal()}</>
+  const modals = <>{renderCopyModeModal()}{renderDraftListModal()}</>
 
   if (is2Pane) {
     return (
