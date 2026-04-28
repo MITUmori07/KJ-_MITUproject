@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.8
+// バージョン: V6.0.9
 // 更新: 2026/04/28
-// 変更: V6.0.8 確定ボタン実装（drafts→estimates/estimate_itemsにINSERT）
+// 変更: V6.0.9 4択モーダルD実装（途中保存から再開・drafts一覧表示）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.8'
+const VERSION = 'V6.0.9'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -59,6 +59,11 @@ type CopyInfo = {
   source_estimate_id: number|null
 }
 type CopyMode = 'A' | 'B' | 'C'
+type Draft = {
+  id: number; file_key: string; date: string; building: string
+  title: string; staff: string; work_type: string
+  sections: Section[]; updated_at: string
+}
 
 const t = (str: string|null|undefined, len: number) => (str || '').slice(0, len)
 
@@ -85,6 +90,8 @@ export default function HistoryPage() {
   const [copyMode, setCopyMode] = useState<CopyMode|null>(null)
   const [showCopyModeModal, setShowCopyModeModal] = useState(false)
   const [showDraftWarningModal, setShowDraftWarningModal] = useState(false)
+  const [showDraftListModal, setShowDraftListModal] = useState(false)
+  const [draftList, setDraftList] = useState<Draft[]>([])
   // ポップアップ
   const [popup, setPopup] = useState<{ sectionId:string; rowId:string; workSection:string }|null>(null)
   const [popupTab, setPopupTab] = useState<'history'|'master'>('history')
@@ -181,6 +188,27 @@ export default function HistoryPage() {
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
     })
     setCopying(false); setShowEstimate(true)
+  }
+
+  const loadDrafts = async () => {
+    const { data } = await supabase.from('drafts').select('*').order('updated_at', { ascending: false })
+    setDraftList(data || [])
+  }
+  const handleDraftResume = (draft: Draft) => {
+    setSections(draft.sections)
+    setCopyInfo({
+      building: draft.building, staff: draft.staff, work_type: draft.work_type,
+      draft_id: draft.id, date: draft.date, title: draft.title,
+      source_estimate_id: null,
+    })
+    setCopyMode(null)
+    setShowDraftListModal(false)
+    setShowEstimate(true)
+  }
+  const handleDeleteDraft = async (draftId: number) => {
+    if (!confirm('この途中保存を削除しますか？')) return
+    await supabase.from('drafts').delete().eq('id', draftId)
+    setDraftList(prev => prev.filter(d => d.id !== draftId))
   }
 
   const sortSectionNames = (names: string[]) => {
@@ -549,9 +577,51 @@ export default function HistoryPage() {
             <div className="font-bold text-orange-700 text-sm">C: コピー（数量あり）</div>
             <div className="text-xs text-gray-500 mt-1">全項目をそのままコピー。数量含めて複製。新しい件名で保存。</div>
           </button>
+          <button onClick={() => { setShowCopyModeModal(false); loadDrafts(); setShowDraftListModal(true) }}
+            className="w-full text-left border-2 border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50 transition-colors">
+            <div className="font-bold text-gray-700 text-sm">D: 途中保存から再開</div>
+            <div className="text-xs text-gray-500 mt-1">保存済みの下書き一覧から選んで編集を再開。</div>
+          </button>
         </div>
         <div className="px-4 pb-4">
           <button onClick={() => setShowCopyModeModal(false)}
+            className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 border rounded-lg">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ==================== D: 途中保存一覧モーダル ====================
+  const renderDraftListModal = () => !showDraftListModal ? null : (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+        <div className="px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="text-base font-bold text-gray-800">途中保存から再開</h2>
+          <button onClick={() => setShowDraftListModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+          {draftList.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">途中保存はありません</div>
+          ) : draftList.map(draft => (
+            <div key={draft.id} className="border rounded-lg px-4 py-3 flex justify-between items-center hover:bg-gray-50">
+              <div className="flex-1 cursor-pointer" onClick={() => handleDraftResume(draft)}>
+                <div className="font-medium text-sm text-gray-800">{draft.title || '（件名未入力）'}</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {draft.date || '日付未入力'} / {draft.building} / {draft.staff} / {draft.work_type}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  保存: {new Date(draft.updated_at).toLocaleString('ja-JP')}
+                </div>
+              </div>
+              <button onClick={() => handleDeleteDraft(draft.id)}
+                className="ml-2 text-red-400 hover:text-red-600 text-xs px-2 py-1 border border-red-200 rounded">
+                削除
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 pb-4 border-t pt-3">
+          <button onClick={() => setShowDraftListModal(false)}
             className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 border rounded-lg">キャンセル</button>
         </div>
       </div>
@@ -1050,7 +1120,7 @@ export default function HistoryPage() {
   )
 
   // ==================== ① 2画面 or 通常レイアウト ====================
-  const modals = <>{renderCopyModeModal()}{renderDraftWarningModal()}</>
+  const modals = <>{renderCopyModeModal()}{renderDraftWarningModal()}{renderDraftListModal()}</>
 
   if (is2Pane) {
     return (
