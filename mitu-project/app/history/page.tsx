@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.3b
+// バージョン: V6.1.5
 // 更新: 2026/04/28
-// 変更: V6.1.3b fix: handleDraftResumeにsource_title追加
+// 変更: V6.1.5 A/B/C選択時にdrafts自動INSERT復活（戻るボタンでデータ消えない）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.3b'
+const VERSION = 'V6.1.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -195,10 +195,22 @@ export default function HistoryPage() {
       }))
     }))
     setSections(newSections); copyItemsRef.current = freshItems
+    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
+    const { data: draftData } = await supabase.from('drafts').insert({
+      file_key,
+      date: mode === 'A' ? selectedEstimate.date : '',
+      building: selectedEstimate.building,
+      title: mode === 'A' ? selectedEstimate.title : '',
+      staff: selectedEstimate.staff,
+      work_type: normalizeWorkType(selectedEstimate.work_type),
+      sections: newSections,
+      source_title: selectedEstimate.title,
+      updated_at: new Date().toISOString()
+    }).select('id').single()
     setCopyInfo({
       building: selectedEstimate.building, staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      draft_id: null,
+      draft_id: draftData ? draftData.id : null,
       date: mode === 'A' ? selectedEstimate.date : '',
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
@@ -252,9 +264,9 @@ export default function HistoryPage() {
     const sectionsToSave = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false })) }))
     const file_key = copyInfo.date && copyInfo.title
       ? `${copyInfo.date}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}`
-      : `copy_未入力_${Date.now()}`
+      : `copy_未入力_${copyInfo.draft_id || Date.now()}`
     if (copyInfo.draft_id === null) {
-      // 初回保存: INSERT
+      // draft_idがない場合（新規作成）は初回INSERT
       const { data } = await supabase.from('drafts').insert({
         file_key, date: copyInfo.date, building: copyInfo.building,
         title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
@@ -264,7 +276,7 @@ export default function HistoryPage() {
       }).select('id').single()
       if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id } : prev)
     } else {
-      // 2回目以降: UPSERT
+      // draft_idがある場合は常にUPSERT
       await supabase.from('drafts').upsert({
         id: copyInfo.draft_id, file_key,
         date: copyInfo.date, building: copyInfo.building,
