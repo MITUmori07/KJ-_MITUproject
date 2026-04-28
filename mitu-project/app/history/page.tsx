@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.6
-// 更新: 2026/04/27
-// 変更: V6.0.6 source_flag追加（1=取込/2=新規作成）
+// バージョン: V6.0.7
+// 更新: 2026/04/28
+// 変更: V6.0.7 A/B/C選択時のdrafts自動保存を廃止（メモリのみ・保存ボタンで初回INSERT）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.6'
+const VERSION = 'V6.0.7'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -55,7 +55,7 @@ type Section = { id: string; name: string; rows: Row[] }
 type Filters = { staff: string; building: string; workType: string; year: string }
 type CopyInfo = {
   building: string; staff: string; work_type: string
-  draft_id: number; date: string; title: string
+  draft_id: number|null; date: string; title: string
   source_estimate_id: number|null
 }
 type CopyMode = 'A' | 'B' | 'C'
@@ -143,7 +143,7 @@ export default function HistoryPage() {
     setShowCopyModeModal(true)
   }
 
-  // ② A/B/Cモードでコピー実行
+  // ② A/B/Cモードでコピー実行（drafts自動保存なし・メモリのみ）
   const handleCopyToEdit = async (mode: CopyMode) => {
     if (!selectedEstimate) return
     setShowCopyModeModal(false); setCopyMode(mode); setCopying(true)
@@ -170,21 +170,11 @@ export default function HistoryPage() {
         source_flag: 1,  // 1=Excelから取り込んだデータのコピー
       }))
     }))
-    const { data, error } = await supabase.from('drafts').insert({
-      file_key: `copy_${selectedEstimate.id}_${Date.now()}`,
-      date: mode === 'A' ? selectedEstimate.date : '',
-      building: selectedEstimate.building,
-      title: mode === 'A' ? selectedEstimate.title : '',
-      staff: selectedEstimate.staff,
-      work_type: normalizeWorkType(selectedEstimate.work_type),
-      sections: newSections, updated_at: new Date().toISOString()
-    }).select('id').single()
-    if (error || !data) { alert('コピー保存に失敗しました'); setCopying(false); return }
     setSections(newSections); copyItemsRef.current = freshItems
     setCopyInfo({
       building: selectedEstimate.building, staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      draft_id: data.id,
+      draft_id: null,
       date: mode === 'A' ? selectedEstimate.date : '',
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
@@ -216,14 +206,26 @@ export default function HistoryPage() {
     const sectionsToSave = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false })) }))
     const file_key = copyInfo.date && copyInfo.title
       ? `${copyInfo.date}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}`
-      : `copy_未入力_${copyInfo.draft_id}`
-    await supabase.from('drafts').upsert({
-      id: copyInfo.draft_id, file_key,
-      date: copyInfo.date, building: copyInfo.building,
-      title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
-      work_type: copyInfo.work_type, sections: sectionsToSave,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' })
+      : `copy_未入力_${Date.now()}`
+    if (copyInfo.draft_id === null) {
+      // 初回保存: INSERT
+      const { data } = await supabase.from('drafts').insert({
+        file_key, date: copyInfo.date, building: copyInfo.building,
+        title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
+        work_type: copyInfo.work_type, sections: sectionsToSave,
+        updated_at: new Date().toISOString()
+      }).select('id').single()
+      if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id } : prev)
+    } else {
+      // 2回目以降: UPSERT
+      await supabase.from('drafts').upsert({
+        id: copyInfo.draft_id, file_key,
+        date: copyInfo.date, building: copyInfo.building,
+        title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
+        work_type: copyInfo.work_type, sections: sectionsToSave,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' })
+    }
     setSaving(false); setSavedMsg('保存しました！'); setTimeout(() => setSavedMsg(''), 3000)
   }
 
