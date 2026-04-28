@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.6
+// バージョン: V6.1.6b
 // 更新: 2026/04/28
-// 変更: V6.1.6 途中保存警告モーダル廃止・戻るボタンでメモリ完全クリア
+// 変更: V6.1.6b fix: handleNewEstimateのsetShowDraftWarningModal削除
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.6'
+const VERSION = 'V6.1.6b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -136,7 +136,6 @@ export default function HistoryPage() {
 
   // 新規作成
   const handleNewEstimate = () => {
-    if (copyInfo) { setShowDraftWarningModal(true); return }
     setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [] }])
     setCopyInfo({
       building: '新宿FT', staff: '', work_type: 'A工事',
