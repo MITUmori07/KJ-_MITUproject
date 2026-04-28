@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.0.7
+// バージョン: V6.0.8
 // 更新: 2026/04/28
-// 変更: V6.0.7 A/B/C選択時のdrafts自動保存を廃止（メモリのみ・保存ボタンで初回INSERT）
+// 変更: V6.0.8 確定ボタン実装（drafts→estimates/estimate_itemsにINSERT）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.0.7'
+const VERSION = 'V6.0.8'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -79,6 +79,7 @@ export default function HistoryPage() {
   const [showSectionInput, setShowSectionInput] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
+  const [confirming, setConfirming] = useState(false)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
   // ② モーダル
   const [copyMode, setCopyMode] = useState<CopyMode|null>(null)
@@ -227,6 +228,57 @@ export default function HistoryPage() {
       }, { onConflict: 'id' })
     }
     setSaving(false); setSavedMsg('保存しました！'); setTimeout(() => setSavedMsg(''), 3000)
+  }
+
+  const handleConfirm = async () => {
+    if (!copyInfo) return
+    if (!copyInfo.date) { alert('日付を入力してください'); return }
+    if (!copyInfo.title) { alert('件名を入力してください'); return }
+    if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
+    if (!confirm(`「${copyInfo.title}」を確定してhistoryに登録しますか？\n確定後は編集できません。`)) return
+    setConfirming(true)
+    // estimates INSERT
+    const { data: estData, error: estError } = await supabase.from('estimates').insert({
+      date: copyInfo.date, building: copyInfo.building,
+      title: copyInfo.title, staff: copyInfo.staff,
+      work_type: copyInfo.work_type,
+    }).select('id').single()
+    if (estError || !estData) {
+      alert('確定に失敗しました（estimates）'); setConfirming(false); return
+    }
+    const estimateId = estData.id
+    // estimate_items INSERT（経費行は含まない・source_flag/row_order付き）
+    const allRows: object[] = []
+    sections.forEach(section => {
+      section.rows.forEach((row, idx) => {
+        allRows.push({
+          estimate_id: estimateId,
+          work_section: section.name,
+          row_order: idx + 1,
+          name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
+          spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
+          quantity: parseFloat(row.quantity) || 0,
+          unit: row.unit,
+          unit_price: parseFloat(row.unit_price) || 0,
+          amount: row.amount,
+          note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
+          source_flag: row.source_flag,
+        })
+      })
+    })
+    const { error: itemsError } = await supabase.from('estimate_items').insert(allRows)
+    if (itemsError) {
+      alert('確定に失敗しました（estimate_items）'); setConfirming(false); return
+    }
+    // draftsから削除（draft_idがある場合）
+    if (copyInfo.draft_id !== null) {
+      await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
+    }
+    setConfirming(false)
+    alert(`「${copyInfo.title}」を確定しました！`)
+    // リセットしてhistory画面へ
+    setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
+    loadEstimates()
   }
 
   const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
@@ -652,6 +704,10 @@ export default function HistoryPage() {
               className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50"
               title="保存（日付・件名未入力でも保存可）">
               {saving ? '保存中...' : '保存'}</button>
+            <button onClick={handleConfirm} disabled={confirming}
+              className="bg-red-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50"
+              title="確定してhistoryに登録（日付・件名必須）">
+              {confirming ? '確定中...' : '確定'}</button>
             <button onClick={handleExport}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
               title="Excel出力（日付・件名必須）">Excel出力</button>
