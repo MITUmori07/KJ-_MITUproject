@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.8c
+// バージョン: V6.1.8d
 // 更新: 2026/04/28
-// 変更: V6.1.8c debug: 単価マスタ取得データをalertで確認
+// 変更: V6.1.8d fix: item_pricesクエリを元に戻しalert削除
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.8c'
+const VERSION = 'V6.1.8d'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -347,11 +347,7 @@ export default function HistoryPage() {
     if (tab === 'master') {
       setPopupLoading(true)
       const { data } = await supabase.from('items')
-        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices!item_prices_item_id_fkey(fiscal_year,price1)').order('name1')
-      // デバッグ: 最初の1件のitem_pricesを確認
-      if (data && data.length > 0) {
-        alert(`取得確認: ${data[0].name1} / item_prices: ${JSON.stringify(data[0].item_prices)}`)
-      }
+        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices(fiscal_year,price1)').order('name1')
       setMasterItems(data || []); setPopupLoading(false)
     }
   }
