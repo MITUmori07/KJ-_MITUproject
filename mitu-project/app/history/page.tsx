@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.1
+// バージョン: V6.1.2
 // 更新: 2026/04/28
-// 変更: V6.1.1 ポップアップに直接入力タブ追加
+// 変更: V6.1.2 単価マスタポップアップにカテゴリ絞り込み追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.1'
+const VERSION = 'V6.1.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -32,7 +32,8 @@ type EstimateItem = {
 type MasterItem = {
   id: number; name1: string; name2: string|null; name3: string|null
   spec1: string|null; spec2: string|null; spec3: string|null
-  unit: string|null; item_prices: { fiscal_year: number; price1: number }[]
+  unit: string|null; category: string|null
+  item_prices: { fiscal_year: number; price1: number }[]
 }
 type PopupItem = {
   id: number; name1: string; name2: string|null; name3: string|null
@@ -103,6 +104,7 @@ export default function HistoryPage() {
   const [fiscalYear, setFiscalYear] = useState<number>(2026)
   const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
   const [currentRowName, setCurrentRowName] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState<string>('')
 
   useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
 
@@ -345,7 +347,7 @@ export default function HistoryPage() {
     if (tab === 'master') {
       setPopupLoading(true)
       const { data } = await supabase.from('items')
-        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,item_prices(fiscal_year,price1)').order('name1')
+        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices(fiscal_year,price1)').order('name1')
       setMasterItems(data || []); setPopupLoading(false)
     }
   }
@@ -401,6 +403,7 @@ export default function HistoryPage() {
     return (item.name1||'').toLowerCase().includes(kw) || (item.spec1||'').toLowerCase().includes(kw)
   })
   const filteredMasterItems = masterItems.filter(item => {
+    if (selectedCategory && item.category !== selectedCategory) return false
     if (!popupSearch) return true
     const kw = popupSearch.toLowerCase()
     return (item.name1||'').toLowerCase().includes(kw) || (item.spec1||'').toLowerCase().includes(kw)
@@ -688,10 +691,17 @@ export default function HistoryPage() {
             直接入力</button>
         </div>
         {popupTab === 'master' && (
-          <div className="px-3 pt-2 flex items-center gap-2">
+          <div className="px-3 pt-2 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500">年度:</span>
             <select className="border rounded px-2 py-1 text-xs" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
               {availableYears.map(y => <option key={y} value={y}>{y}年度</option>)}
+            </select>
+            <span className="text-xs text-gray-500">カテゴリ:</span>
+            <select className="border rounded px-2 py-1 text-xs" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
+              <option value="">全て</option>
+              {['解体','天井','壁','床','建具','塗装','防水','ブラインド','金物・錠','サイン・フィルム','養生・仮設','経費・諸費用'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
         )}
