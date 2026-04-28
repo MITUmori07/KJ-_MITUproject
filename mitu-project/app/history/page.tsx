@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.8
+// バージョン: V6.1.8b
 // 更新: 2026/04/28
-// 変更: V6.1.8 estimate画面の2画面ボタンを3行目保存左横に移動・color変更・ボタンtitle修正
+// 変更: V6.1.8b fix: 単価マスタの外部キー名を明示してprice取得を修正
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.8'
+const VERSION = 'V6.1.8b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -347,7 +347,7 @@ export default function HistoryPage() {
     if (tab === 'master') {
       setPopupLoading(true)
       const { data } = await supabase.from('items')
-        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices(fiscal_year,price1)').order('name1')
+        .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices!item_prices_item_id_fkey(fiscal_year,price1)').order('name1')
       setMasterItems(data || []); setPopupLoading(false)
     }
   }
