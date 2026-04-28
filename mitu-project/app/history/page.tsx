@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.3
+// バージョン: V6.1.3b
 // 更新: 2026/04/28
-// 変更: V6.1.3 途中保存一覧にコピー元件名を表示
+// 変更: V6.1.3b fix: handleDraftResumeにsource_title追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.3'
+const VERSION = 'V6.1.3b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -216,7 +216,7 @@ export default function HistoryPage() {
     setCopyInfo({
       building: draft.building, staff: draft.staff, work_type: draft.work_type,
       draft_id: draft.id, date: draft.date, title: draft.title,
-      source_estimate_id: null,
+      source_estimate_id: null, source_title: draft.source_title || '',
     })
     setCopyMode(null)
     setShowDraftListModal(false)
