@@ -1,16 +1,16 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.8
-// 更新: 2026/04/27
-// 変更: V1.1.8 source_flag:1をINSERTに追加
+// バージョン: V1.1.9
+// 更新: 2026/04/28
+// 変更: V1.1.9 名称空行に直前行の名称を自動引き継ぎ
 // ============================================================
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 
-const VERSION = 'V1.1.8'
+const VERSION = 'V1.1.9'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -29,7 +29,6 @@ const split3 = (val: string | null | undefined): [string, string, string] => {
 }
 
 // ファイル名からメタ情報を取得
-// 例: 20251112_新宿FT_32階サーバー室_大塚_C工事.xlsx
 const parseFileName = (name: string) => {
   const base = name.replace(/\.xlsx?$/i, '')
   const parts = base.split('_')
@@ -55,11 +54,10 @@ type PreviewRow = {
   warningMsg: string
 }
 
-// マッチング: Excelの工事区分合計
 type SectionMatch = {
   name: string
-  excelTotal: number  // Excelの「〇〇の計」
-  calcTotal: number   // 取り込みデータの合計
+  excelTotal: number
+  calcTotal: number
   matched: boolean
 }
 
@@ -89,46 +87,35 @@ export default function ImportPage() {
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array', cellFormula: false })
-      // 明細シートを自動選択（「建築」「工事」を含むシートを優先）
       const sheetNames = wb.SheetNames
       const targetSheet = sheetNames.find(n =>
         n.includes('建築') || n.includes('工事') || n.includes('明細')
       ) || sheetNames[0]
       const ws = wb.Sheets[targetSheet]
-      // header:'A'で列名キー方式（A列からの絶対参照、min_columnの違いに対応）
       const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 'A', defval: null })
 
       const parsed: PreviewRow[] = []
       const excelTotals: Record<string, number> = {}
       let currentSection = ''
       let rowOrder = 0
-      // 小計が出たら経費フェーズに切り替え
       let afterSubtotal = false
-      // P.2が出るまで1ページ目をスキップ
       let page2Started = false
-
-      const EXPENSE_NAMES = ['仮設工事費','運搬費','深夜作業割増','現場経費']
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]
-        const b = row['B']  // B列: 番号
-        const c = String(row['C'] || '').trim()  // C列: 名称
-        const d = String(row['D'] || '').trim()  // D列: 仕様
-        const e = row['E']  // E列: 数量
-        const f = String(row['F'] || '').trim()  // F列: 単位
-        const g = row['G']  // G列: 単価
-        const h = row['H']  // H列: 金額
-        const ii = String(row['I'] || '').trim() // I列: 備考
+        const b = row['B']
+        const c = String(row['C'] || '').trim()
+        const d = String(row['D'] || '').trim()
+        const e = row['E']
+        const f = String(row['F'] || '').trim()
+        const g = row['G']
+        const h = row['H']
+        const ii = String(row['I'] || '').trim()
 
-        // ページ番号行スキップ
         if (isPageNum(ii) && !c) continue
-        // ヘッダー行スキップ
         if (isHeaderRow(c)) continue
-        // 空行スキップ
         if (!c && !d && !e && !g && !h) continue
 
-        // 工事区分ヘッダー（B列が数字でC列に名称、数量なし）
-        // → ここで初めてpage2Started=true（1ページ目サマリーをスキップ）
         const bNum = typeof b === 'number' || (typeof b === 'string' && /^\d+$/.test(b.trim()))
         if (bNum && c && !e && !g) {
           page2Started = true
@@ -138,16 +125,13 @@ export default function ImportPage() {
           continue
         }
 
-        // 工事区分ヘッダーが出るまでスキップ（1ページ目のサマリー）
         if (!page2Started) continue
 
-        // 合計行: Excelの「〇〇の計」→ マッチング用に記録してスキップ
         if (isSectionTotalRow(c, d) && currentSection && h !== null) {
           excelTotals[currentSection] = Math.round(Number(h))
           continue
         }
 
-        // 小計行: C列またはD列に「小計」を含む行 → 経費フェーズに切り替え
         const isSubtotal = (c === '小計' || d === '小計') && !isSectionTotalRow(c, d)
         if (isSubtotal && currentSection) {
           afterSubtotal = true
@@ -167,7 +151,6 @@ export default function ImportPage() {
           continue
         }
 
-        // 経費フェーズ: 小計より下は名称がある行を全部経費として取り込む
         if (afterSubtotal && currentSection && c) {
           const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
           const unitPrice = g !== null && g !== undefined ? Number(g) : amount
@@ -189,17 +172,20 @@ export default function ImportPage() {
           continue
         }
 
-        // 明細行（小計より上の全行）
-        // 金額はH列を直接使用（単価×数量≠金額の行が存在するため）
-        if (c) {
+        // 明細行
+        // name1が空でもspec/数量/単価があれば取り込む（名称引き継ぎ後処理で補完）
+        if (c || d || e !== null || g !== null) {
           const [n1, n2, n3] = split3(c)
           const [s1, s2, s3] = split3(d)
           const [o1, o2, o3] = split3(ii)
           const qty = e !== null && e !== undefined ? Number(e) : null
           const price = g !== null && g !== undefined ? Number(g) : null
-          // H列（金額）を直接使用。H列が空の場合のみ数量×単価で計算
           const hVal = h !== null && h !== undefined && !isNaN(Number(h)) ? Number(h) : null
           const amount = hVal !== null ? Math.round(hVal) : (qty !== null && price !== null ? Math.round(qty * price) : 0)
+
+          // spec/数量/単価のどれかがあれば取り込む
+          const hasContent = d || e !== null || g !== null
+          if (!hasContent) continue
 
           const warning = !currentSection || qty === null
           const msgs: string[] = []
@@ -223,25 +209,48 @@ export default function ImportPage() {
         }
       }
 
+      // ==================== 名称引き継ぎ後処理 ====================
+      // name1が空かつspec1/数量/単価のいずれかに値がある行は
+      // 直前行のname1/name2/name3を引き継ぐ
+      for (let i = 1; i < parsed.length; i++) {
+        const row = parsed[i]
+        if (
+          !row.name1 &&
+          (row.spec1 || row.quantity || row.unit_price) &&
+          !row.work_section.startsWith('経費_')
+        ) {
+          // 直前の同じwork_sectionの行を探す
+          let prevIdx = i - 1
+          while (prevIdx >= 0 && parsed[prevIdx].work_section !== row.work_section) {
+            prevIdx--
+          }
+          if (prevIdx >= 0) {
+            parsed[i] = {
+              ...row,
+              name1: parsed[prevIdx].name1,
+              name2: parsed[prevIdx].name2,
+              name3: parsed[prevIdx].name3,
+            }
+          }
+        }
+      }
+
       if (parsed.length === 0) {
-        // B列の最初の10件を確認
         const bVals = rows.slice(0, 40).map((r: any, i: number) => `行${i+1}:B=${JSON.stringify(r['B'])}C=${JSON.stringify(r['C'])}`).join(' / ')
         const debugInfo = `行数:${rows.length} page2Started:${page2Started} B列サンプル: ${bVals}`
         setErrorMsg('明細データが見つかりませんでした。' + debugInfo)
         return
       }
 
-      // マッチング計算: 明細合計 + 経費合計 = 工事区分の計
+      // マッチング計算
       const sections = [...new Set(
         parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
       )]
       const matches: SectionMatch[] = sections.map(name => {
         const excelTotal = excelTotals[name] ?? null
-        // 明細行合計（小計相当）
         const detailTotal = parsed
           .filter(r => r.work_section === name)
           .reduce((sum, r) => sum + r.amount, 0)
-        // 経費行合計（仮設・運搬・深夜・現場経費）※小計行は除く
         const expenseTotal = parsed
           .filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計')
           .reduce((sum, r) => sum + r.amount, 0)
@@ -278,7 +287,6 @@ export default function ImportPage() {
         updated.warning = !updated.work_section || !updated.quantity || !updated.unit_price
         return updated
       })
-      // マッチング再計算
       const sections = [...new Set(
         next.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
       )]
@@ -292,9 +300,7 @@ export default function ImportPage() {
           .reduce((sum, r) => sum + r.amount, 0)
         const calcTotal = detailTotal + expenseTotal
         return {
-          name,
-          excelTotal,
-          calcTotal,
+          name, excelTotal, calcTotal,
           matched: Math.round(excelTotal) === Math.round(calcTotal),
         }
       })
@@ -316,28 +322,19 @@ export default function ImportPage() {
     setImporting(true)
 
     try {
-      // estimates INSERT
       const { data: estData, error: estError } = await supabase
-        .from('estimates')
-        .insert({
-          date: headerInfo.date,
-          building: headerInfo.building,
-          title: headerInfo.title,
-          staff: headerInfo.staff,
+        .from('estimates').insert({
+          date: headerInfo.date, building: headerInfo.building,
+          title: headerInfo.title, staff: headerInfo.staff,
           work_type: headerInfo.work_type,
-        })
-        .select('id')
-        .single()
+        }).select('id').single()
 
       if (estError || !estData) {
         setErrorMsg('見積ヘッダーの保存に失敗しました: ' + (estError?.message || ''))
-        setImporting(false)
-        return
+        setImporting(false); return
       }
 
       const estimateId = estData.id
-
-      // estimate_items INSERT
       const itemsToInsert = previewRows.map((r, idx) => ({
         estimate_id: estimateId,
         work_section: r.work_section,
@@ -353,16 +350,12 @@ export default function ImportPage() {
         source_flag: 1,
       }))
 
-      const { error: itemsError } = await supabase
-        .from('estimate_items')
-        .insert(itemsToInsert)
+      const { error: itemsError } = await supabase.from('estimate_items').insert(itemsToInsert)
 
       if (itemsError) {
-        // estimatesをロールバック
         await supabase.from('estimates').delete().eq('id', estimateId)
         setErrorMsg('明細データの保存に失敗しました: ' + itemsError.message)
-        setImporting(false)
-        return
+        setImporting(false); return
       }
 
       setDoneMsg(`取り込み完了！ ${previewRows.length}行を登録しました。`)
@@ -389,13 +382,10 @@ export default function ImportPage() {
           <span className="text-sm font-bold text-gray-700">Excelインポート</span>
           <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
         </div>
-
         <div className="bg-white rounded-xl shadow p-6">
           <h1 className="text-lg font-bold text-gray-800 mb-4">Excelファイルを取り込む</h1>
-
           <div
-            onDrop={handleDrop}
-            onDragOver={e => e.preventDefault()}
+            onDrop={handleDrop} onDragOver={e => e.preventDefault()}
             className="border-2 border-dashed border-blue-300 rounded-xl p-10 text-center hover:bg-blue-50 transition-colors cursor-pointer"
             onClick={() => document.getElementById('fileInput')?.click()}>
             <div className="text-4xl mb-3">📂</div>
@@ -404,13 +394,11 @@ export default function ImportPage() {
             <input id="fileInput" type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </div>
-
           {errorMsg && (
             <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
               ⚠️ {errorMsg}
             </div>
           )}
-
           <div className="mt-4 text-xs text-gray-400">
             <div>ファイル名の形式: YYYYMMDD_ビル名_件名_担当者_工事種別.xlsx</div>
             <div className="mt-1">例: 20251112_新宿FT_32階天井工事_大塚_C工事.xlsx</div>
@@ -423,12 +411,10 @@ export default function ImportPage() {
   // ==================== STEP: preview ====================
   if (step === 'preview') return (
     <main className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-4 py-2">
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => { setStep('upload'); setPreviewRows([]) }}
-            className="bg-gray-500 text-white px-3 py-1 rounded text-xs"
-            title="アップロード画面に戻る">← 戻る</button>
+            className="bg-gray-500 text-white px-3 py-1 rounded text-xs">← 戻る</button>
           <span className="text-sm font-bold text-gray-700">プレビュー確認</span>
           <span className="text-xs text-gray-500">{fileName}</span>
           <span className="text-xs text-gray-400 ml-1">{VERSION}</span>
@@ -439,57 +425,46 @@ export default function ImportPage() {
           )}
           <div className="ml-auto flex gap-2 items-center">
             <span className="text-xs text-gray-500">{previewRows.length}行</span>
-            <button onClick={handleImport}
-              disabled={importing || !allMatched}
+            <button onClick={handleImport} disabled={importing || !allMatched}
               className={`px-4 py-1.5 rounded text-sm font-bold transition-colors ${
-                allMatched
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                allMatched ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
               title={allMatched ? 'SupabaseにINSERTする' : '全工事区分の合計が一致してから取り込めます'}>
               {importing ? '取り込み中...' : allMatched ? '取り込む' : '合計不一致のため取り込み不可'}
             </button>
           </div>
         </div>
-
-        {/* ヘッダー情報 */}
         <div className="flex flex-wrap gap-2 mt-2 pb-1">
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
             <input type="date" className="border rounded px-2 py-0.5 text-xs w-32"
-              value={headerInfo.date}
-              onChange={e => setHeaderInfo({...headerInfo, date: e.target.value})} />
+              value={headerInfo.date} onChange={e => setHeaderInfo({...headerInfo, date: e.target.value})} />
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">ビル名</label>
             <select className="border rounded px-1 py-0.5 text-xs w-24"
-              value={headerInfo.building}
-              onChange={e => setHeaderInfo({...headerInfo, building: e.target.value})}>
+              value={headerInfo.building} onChange={e => setHeaderInfo({...headerInfo, building: e.target.value})}>
               {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-0.5 flex-1 min-w-[160px]">
             <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
             <input type="text" className="border rounded px-2 py-0.5 text-xs w-full"
-              value={headerInfo.title}
-              onChange={e => setHeaderInfo({...headerInfo, title: e.target.value})} />
+              value={headerInfo.title} onChange={e => setHeaderInfo({...headerInfo, title: e.target.value})} />
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">担当者</label>
             <input type="text" className="border rounded px-2 py-0.5 text-xs w-16"
-              value={headerInfo.staff}
-              onChange={e => setHeaderInfo({...headerInfo, staff: e.target.value})} />
+              value={headerInfo.staff} onChange={e => setHeaderInfo({...headerInfo, staff: e.target.value})} />
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">種別</label>
             <select className="border rounded px-1 py-0.5 text-xs w-20"
-              value={headerInfo.work_type}
-              onChange={e => setHeaderInfo({...headerInfo, work_type: e.target.value})}>
+              value={headerInfo.work_type} onChange={e => setHeaderInfo({...headerInfo, work_type: e.target.value})}>
               {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
             </select>
           </div>
         </div>
-
         {errorMsg && (
           <div className="mt-1 bg-red-50 border border-red-200 rounded px-3 py-1 text-xs text-red-700">
             ⚠️ {errorMsg}
@@ -497,7 +472,6 @@ export default function ImportPage() {
         )}
       </div>
 
-      {/* マッチング確認 */}
       <div className="p-4 max-w-6xl mx-auto">
         <div className="bg-white rounded-lg border mb-4 overflow-hidden">
           <div className="bg-gray-800 text-white px-4 py-2 text-sm font-bold">
@@ -522,16 +496,13 @@ export default function ImportPage() {
                   <td className={`p-2 text-right ${m.matched ? 'text-gray-400' : 'text-red-600 font-bold'}`}>
                     {m.matched ? '—' : `${(m.calcTotal - m.excelTotal).toLocaleString()} 円`}
                   </td>
-                  <td className="p-2 text-center text-lg">
-                    {m.matched ? '✅' : '❌'}
-                  </td>
+                  <td className="p-2 text-center text-lg">{m.matched ? '✅' : '❌'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        {/* 明細プレビュー */}
         {sections.map(section => {
           const sectionRows = previewRows.filter(r => r.work_section === section)
           const expenseRows = previewRows.filter(r => r.work_section === `経費_${section}`)
@@ -610,8 +581,7 @@ export default function ImportPage() {
                           </td>
                           <td className="p-1 text-center">
                             <button onClick={() => deleteRow(idx)}
-                              className="text-red-400 hover:text-red-600 text-xs"
-                              title="この行を削除">✕</button>
+                              className="text-red-400 hover:text-red-600 text-xs">✕</button>
                           </td>
                         </tr>
                       )
