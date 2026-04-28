@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.2
+// バージョン: V6.1.3
 // 更新: 2026/04/28
-// 変更: V6.1.2 単価マスタポップアップにカテゴリ絞り込み追加
+// 変更: V6.1.3 途中保存一覧にコピー元件名を表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.2'
+const VERSION = 'V6.1.3'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -57,13 +57,13 @@ type Filters = { staff: string; building: string; workType: string; year: string
 type CopyInfo = {
   building: string; staff: string; work_type: string
   draft_id: number|null; date: string; title: string
-  source_estimate_id: number|null
+  source_estimate_id: number|null; source_title: string
 }
 type CopyMode = 'A' | 'B' | 'C'
 type Draft = {
   id: number; file_key: string; date: string; building: string
   title: string; staff: string; work_type: string
-  sections: Section[]; updated_at: string
+  sections: Section[]; updated_at: string; source_title: string|null
 }
 
 const t = (str: string|null|undefined, len: number) => (str || '').slice(0, len)
@@ -142,7 +142,7 @@ export default function HistoryPage() {
     setCopyInfo({
       building: '新宿FT', staff: '', work_type: 'A工事',
       draft_id: null, date: '', title: '',
-      source_estimate_id: null,
+      source_estimate_id: null, source_title: '',
     })
     setCopyMode(null)
     setShowEstimate(true)
@@ -202,6 +202,7 @@ export default function HistoryPage() {
       date: mode === 'A' ? selectedEstimate.date : '',
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
+      source_title: selectedEstimate.title,
     })
     setCopying(false); setShowEstimate(true)
   }
@@ -258,6 +259,7 @@ export default function HistoryPage() {
         file_key, date: copyInfo.date, building: copyInfo.building,
         title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
         work_type: copyInfo.work_type, sections: sectionsToSave,
+        source_title: copyInfo.source_title || null,
         updated_at: new Date().toISOString()
       }).select('id').single()
       if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id } : prev)
@@ -268,6 +270,7 @@ export default function HistoryPage() {
         date: copyInfo.date, building: copyInfo.building,
         title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
         work_type: copyInfo.work_type, sections: sectionsToSave,
+        source_title: copyInfo.source_title || null,
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' })
     }
@@ -623,6 +626,9 @@ export default function HistoryPage() {
             <div key={draft.id} className="border rounded-lg px-4 py-3 flex justify-between items-center hover:bg-gray-50">
               <div className="flex-1 cursor-pointer" onClick={() => handleDraftResume(draft)}>
                 <div className="font-medium text-sm text-gray-800">{draft.title || '（件名未入力）'}</div>
+                {draft.source_title && (
+                  <div className="text-xs text-blue-500 mt-0.5">コピー元: {draft.source_title}</div>
+                )}
                 <div className="text-xs text-gray-500 mt-0.5">
                   {draft.date || '日付未入力'} / {draft.building} / {draft.staff} / {draft.work_type}
                 </div>
