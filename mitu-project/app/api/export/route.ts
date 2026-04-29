@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.7
+// バージョン: V6.0.8b
 // 更新: 2026/04/29
-// 変更: V6.0.7 経費をhistory画面の計算値をそのまま使用（独自計算廃止）
+// 変更: V6.0.8b debug: writeSubtotalの受け取り値をconsole.logで確認
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -66,20 +66,21 @@ export async function POST(req: NextRequest) {
   const getSectionTotal = (section: any) => section.sectionTotal || 0
 
   const writeSubtotal = (section: any, sIdx: number) => {
+    const subtotal = section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)
+    const keihi = section.keihi || 0
+    const unban = section.unban || 0
+    const night = section.night || 0
+    const genba = section.genba || 0
+    const sectionTotal = section.sectionTotal || 0
+    // デバッグ
+    console.log(`[${section.name}] subtotal=${subtotal} keihi=${keihi} unban=${unban} night=${night} genba=${genba} sectionTotal=${sectionTotal}`)
+
     const remaining = DATA_ROWS - usedRows
     if (remaining < SUBTOTAL_ROWS) {
       while (usedRows < DATA_ROWS) addEmptyRow()
       addPageNum(); addHeader()
     }
     while (usedRows < DATA_ROWS - SUBTOTAL_ROWS) addEmptyRow()
-
-    const subtotal = section.rows.reduce((s: number, row: any) =>
-      s + Math.round((parseFloat(row.quantity)||0)*(parseFloat(row.unit_price)||0)), 0)
-    const keihi = section.keihi || 0
-    const unban = section.unban || 0
-    const night = section.night || 0
-    const genba = section.genba || 0
-    const sectionTotal = section.sectionTotal || 0
 
     const items: [string, number|null, number, string][] = [
       ['小計', null, Math.round(subtotal), ''],
