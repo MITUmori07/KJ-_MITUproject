@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.8c
+// バージョン: V6.0.9
 // 更新: 2026/04/29
-// 変更: V6.0.8c debug console.log削除
+// 変更: V6.0.9 特殊仮設工事の仮設工事費を0円固定
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -67,12 +67,11 @@ export async function POST(req: NextRequest) {
 
   const writeSubtotal = (section: any, sIdx: number) => {
     const subtotal = section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)
-    const keihi = section.keihi || 0
+    const keihi = section.name === '特殊仮設工事' ? 0 : (section.keihi || 0)
     const unban = section.unban || 0
     const night = section.night || 0
     const genba = section.genba || 0
     const sectionTotal = section.sectionTotal || 0
-    // デバッグ削除済み
     const remaining = DATA_ROWS - usedRows
     if (remaining < SUBTOTAL_ROWS) {
       while (usedRows < DATA_ROWS) addEmptyRow()
