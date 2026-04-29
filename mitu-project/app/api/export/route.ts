@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.6
-// 更新: 2026/04/27
-// 変更: ⑧印刷設定追加（列幅に印刷・29行毎改ページ）
+// バージョン: V6.0.7
+// 更新: 2026/04/29
+// 変更: V6.0.7 経費をhistory画面の計算値をそのまま使用（独自計算廃止）
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -62,14 +62,8 @@ export async function POST(req: NextRequest) {
     const er = ws.getRow(r); er.height = 36; bd(er); r++; usedRows++
   }
 
-  const calcSub = (section: any) =>
-    section.rows.reduce((s: number, row: any) =>
-      s + Math.round((parseFloat(row.quantity)||0)*(parseFloat(row.unit_price)||0)), 0)
-
-  const getSectionTotal = (section: any) => {
-    const sub = calcSub(section)
-    return sub + Math.round(sub*0.07) + Math.round(sub*0.02) + Math.round(sub*0.10)
-  }
+  // 経費はhistory画面から渡された値をそのまま使用
+  const getSectionTotal = (section: any) => section.sectionTotal || 0
 
   const writeSubtotal = (section: any, sIdx: number) => {
     const remaining = DATA_ROWS - usedRows
@@ -78,16 +72,20 @@ export async function POST(req: NextRequest) {
       addPageNum(); addHeader()
     }
     while (usedRows < DATA_ROWS - SUBTOTAL_ROWS) addEmptyRow()
-    const subtotal = calcSub(section)
-    const keihi = Math.round(subtotal * 0.07)
-    const unban = Math.round(subtotal * 0.02)
-    const genba = Math.round(subtotal * 0.10)
-    const sectionTotal = subtotal + keihi + unban + genba
+
+    const subtotal = section.rows.reduce((s: number, row: any) =>
+      s + Math.round((parseFloat(row.quantity)||0)*(parseFloat(row.unit_price)||0)), 0)
+    const keihi = section.keihi || 0
+    const unban = section.unban || 0
+    const night = section.night || 0
+    const genba = section.genba || 0
+    const sectionTotal = section.sectionTotal || 0
+
     const items: [string, number|null, number, string][] = [
       ['小計', null, Math.round(subtotal), ''],
       ['仮設工事費', 1, keihi, '式'],
       ['運搬費', 1, unban, '式'],
-      ['深夜作業割増', 1, 0, '式'],
+      ['夜間割増費', 1, night, '式'],
       ['現場経費', 1, genba, '式'],
       [(sIdx+1) + '- ' + section.name + 'の計', null, Math.round(sectionTotal), ''],
     ]
@@ -167,13 +165,11 @@ export async function POST(req: NextRequest) {
     addPageNum()
   })
 
-  // ▼ V6.0.6: ⑧ 印刷設定
-  // 列幅に印刷（fitToPage）
+  // 印刷設定
   ws.pageSetup.fitToPage = true
   ws.pageSetup.fitToWidth = 1
-  ws.pageSetup.fitToHeight = 0  // 縦は自動
+  ws.pageSetup.fitToHeight = 0
 
-  // 29行毎に改ページ（ExcelJS正式API: row.pageBreak）
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
     ws.getRow(br).addPageBreak()
