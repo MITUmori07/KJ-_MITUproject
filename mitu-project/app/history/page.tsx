@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.4'
+const VERSION = 'V1.0.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1008,20 +1008,22 @@ export default function HistoryPage() {
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100">
                     <tr>
+                      <th className="p-2 text-center w-8">No.</th>
                       <th className="p-2 text-left w-10">操作</th>
                       <th className="p-2 text-left w-44">名称</th>
                       <th className="p-2 text-left w-36">仕様</th>
                       <th className="p-2 text-right w-16">数量</th>
                       <th className="p-2 text-left w-16">単位</th>
                       <th className="p-2 text-right w-20">単価</th>
-                      <th className="p-2 text-right w-22">金額</th>
-                      <th className="p-2 text-left w-28">備考</th>
+                      <th className="p-2 text-right w-16">金額</th>
+                      <th className="p-2 text-left w-24">備考</th>
                       <th className="p-2 text-center w-12" title="夜=夜間作業 / 搬=搬入費除外（赤）">夜搬</th>
                     </tr>
                   </thead>
                   <tbody>
                     {section.rows.map((row, rowIdx) => (
                       <tr key={row.id} className="border-t align-top">
+                        <td className="p-1 text-center align-top text-xs text-gray-400 pt-2">{rowIdx + 1}</td>
                         <td className="p-1 align-top">
                           <div className="flex flex-col gap-0.5 items-center pt-1">
                             {rowIdx === 0 && (
@@ -1077,7 +1079,7 @@ export default function HistoryPage() {
                             <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
                           )}
                         </td>
-                        <td className="p-1 text-right pr-2 pt-2">{row.amount.toLocaleString()}</td>
+                        <td className="p-1 text-right pt-2 text-xs">{row.amount.toLocaleString()}</td>
                         <td className="p-1">
                           {['note1','note2','note3'].map((f,i) => (
                             <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
@@ -1299,7 +1301,7 @@ export default function HistoryPage() {
                 <div key={sectionName} className="mb-6">
                   <div className="bg-blue-800 text-white px-4 py-5 flex justify-between items-center">
                     <span className="font-bold text-sm">{sectionName}</span>
-                    <span className="text-xs">小計 {fmt(subtotalVal)} 円</span>
+                    <span className="text-xs">工事合計 {fmt(total)} 円</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full bg-white border border-t-0" style={{tableLayout:'fixed', fontSize:'11px'}}>
