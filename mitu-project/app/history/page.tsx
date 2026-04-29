@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.8c
+// バージョン: V1.0.9
 // 更新: 2026/04/29
-// 変更: V1.0.8c fix: useEffectで2画面自動切替
+// 変更: V1.0.9 fix: 深夜休日作業割増・現場雑費の名称対応
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.8c'
+const VERSION = 'V1.0.9'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -621,14 +621,14 @@ export default function HistoryPage() {
       const { sectionItems, expenses, subtotal: sub } = getSectionData(name)
       // 小計行を除外して経費行のみ取得
       const expenseRows = expenses.filter(e => e.name1 !== '小計')
-      const getExpenseAmount = (expName: string) => {
-        const exp = expenseRows.find(e => e.name1 === expName)
+      const getExpenseAmount = (expName: string, altName?: string) => {
+        const exp = expenseRows.find(e => e.name1 === expName || (altName && e.name1 === altName))
         return exp ? (exp.amount || 0) : 0
       }
       const keihi = getExpenseAmount('仮設工事費')
       const unban = getExpenseAmount('運搬費')
-      const night = getExpenseAmount('深夜作業割増')
-      const genba = getExpenseAmount('現場経費')
+      const night = getExpenseAmount('深夜作業割増', '深夜休日作業割増')
+      const genba = getExpenseAmount('現場経費', '現場雑費')
       // 工事の計 = 小計 + 仮設 + 運搬 + 夜間 + 現場（100円単位切り捨て）
       const zeinuki = sub + keihi + unban + night
       const sectionTotal = Math.floor(zeinuki * 1.10 / 100) * 100
@@ -1353,9 +1353,15 @@ export default function HistoryPage() {
                           )
                         })}
                         {(() => {
-                          const expNames = ['小計', '仮設工事費', '運搬費', '深夜作業割増', '現場経費']
-                          const normalizedExp = expNames.map(name =>
-                            expenses.find(e => e.name1 === name) || { id: name, name1: name, amount: 0, quantity: 0, unit: '', spec1: null, note1: null }
+                          const expDefs = [
+                            { key: '小計' },
+                            { key: '仮設工事費' },
+                            { key: '運搬費' },
+                            { key: '深夜作業割増', alt: '深夜休日作業割増' },
+                            { key: '現場経費', alt: '現場雑費' },
+                          ]
+                          const normalizedExp = expDefs.map(({ key, alt }) =>
+                            expenses.find(e => e.name1 === key || (alt && e.name1 === alt)) || { id: key, name1: key, amount: 0, quantity: 0, unit: '', spec1: null, note1: null }
                           )
                           return normalizedExp.map(exp => (
                             <tr key={exp.id} className="border-t bg-gray-50 align-top">
