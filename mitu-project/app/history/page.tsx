@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.8
+// バージョン: V6.2.9
 // 更新: 2026/04/29
-// 変更: V6.2.8 fix: handleExportHistoryの小計二重計上を修正
+// 変更: V6.2.9 fix: 確定時に経費行もestimate_itemsに保存
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.8'
+const VERSION = 'V6.2.9'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -300,7 +300,7 @@ export default function HistoryPage() {
       alert('確定に失敗しました（estimates）'); setConfirming(false); return
     }
     const estimateId = estData.id
-    // estimate_items INSERT（経費行は含まない・source_flag/row_order付き）
+    // estimate_items INSERT（通常行・source_flag/row_order付き）
     const allRows: object[] = []
     sections.forEach(section => {
       section.rows.forEach((row, idx) => {
@@ -323,6 +323,34 @@ export default function HistoryPage() {
     if (itemsError) {
       alert('確定に失敗しました（estimate_items）'); setConfirming(false); return
     }
+    // 経費行 INSERT
+    const expenseRows: object[] = []
+    sections.forEach(section => {
+      const sub = subtotal(section)
+      const keihiVal = section.name === '特殊仮設工事' ? 0 : getKeihiCost(section)
+      const unbanVal = getHakobiCost(section)
+      const nightVal = getNightCost(section)
+      const genbaVal = getGenbaCost(section)
+      const ws = `経費_${section.name}`
+      const expItems = [
+        { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
+        { name1: '仮設工事費', amount: keihiVal, quantity: 1, unit: '式' },
+        { name1: '運搬費', amount: unbanVal, quantity: 1, unit: '式' },
+        { name1: '深夜作業割増', amount: nightVal, quantity: 1, unit: '式' },
+        { name1: '現場経費', amount: genbaVal, quantity: 1, unit: '式' },
+      ]
+      expItems.forEach((e, idx) => {
+        expenseRows.push({
+          estimate_id: estimateId,
+          work_section: ws,
+          row_order: idx + 1,
+          name1: e.name1, quantity: e.quantity,
+          unit: e.unit, unit_price: 0,
+          amount: e.amount,
+        })
+      })
+    })
+    await supabase.from('estimate_items').insert(expenseRows)
     // draftsから削除（draft_idがある場合）
     if (copyInfo.draft_id !== null) {
       await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
