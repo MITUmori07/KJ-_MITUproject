@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.9
+// バージョン: V6.1.9b
 // 更新: 2026/04/28
-// 変更: V6.1.9 fix: MasterItemのprice1型をnumber|nullに修正・alert削除
+// 変更: V6.1.9b fix: selectMasterItemのprice1 null対応
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.9'
+const VERSION = 'V6.1.9b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -386,11 +386,11 @@ export default function HistoryPage() {
   }
   const selectMasterItem = (item: MasterItem) => {
     if (!popup) return
-    const priceObj = item.item_prices?.find(p => p.fiscal_year === fiscalYear) || item.item_prices?.[0]
+    const priceObj = item.item_prices?.find((p: { fiscal_year: number; price1: number|null }) => p.fiscal_year === fiscalYear) || item.item_prices?.[0]
     applyItemToRow({
       name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
       spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
-      unit: item.unit||'', unit_price: priceObj?.price1?.toString()||'',
+      unit: item.unit||'', unit_price: priceObj?.price1 != null ? String(priceObj.price1) : '',
       note1:'', note2:'', note3:'', source_estimate_item_id: null,
     }, popup.sectionId, popup.rowId)
   }
@@ -745,10 +745,10 @@ export default function HistoryPage() {
               : <select size={10} className="w-full border rounded text-sm"
                   onChange={e => { const item = filteredMasterItems[Number(e.target.value)]; if (item) selectMasterItem(item) }}>
                   {filteredMasterItems.map((item, idx) => {
-                    const priceObj = item.item_prices?.find((p: {fiscal_year:number; price1:number}) => p.fiscal_year === fiscalYear)
+                    const priceObj = item.item_prices?.find((p: { fiscal_year: number; price1: number|null }) => p.fiscal_year === fiscalYear)
                     return (
                       <option key={item.id} value={idx}>
-                        {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{priceObj ? ` / ${priceObj.price1.toLocaleString()}円` : ''}
+                        {item.name1}{item.spec1 ? ` / ${item.spec1}` : ''}{item.unit ? ` / ${item.unit}` : ''}{priceObj?.price1 != null ? ` / ${priceObj.price1.toLocaleString()}円` : ''}
                       </option>
                     )
                   })}
