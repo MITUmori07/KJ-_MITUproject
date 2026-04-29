@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.2'
+const VERSION = 'V1.0.3'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1318,29 +1318,30 @@ export default function HistoryPage() {
                       <tbody>
                         {sectionItems.map(item => {
                           const isHL = highlightedItems.has(item.id)
+                          const tdPy = rowHeight === 'large' ? 'py-10' : 'py-1'
                           return (
-                          <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`} style={{minHeight: rowHeight === 'large' ? '160px' : '40px'}}>
-                            <td className="py-4 text-center">{String(item.row_order).slice(0,2)}</td>
-                            <td className="py-4 overflow-hidden">
+                          <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
+                            <td className={`${tdPy} text-center`}>{String(item.row_order).slice(0,2)}</td>
+                            <td className={`${tdPy} overflow-hidden`}>
                               {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
                               {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
                               {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
                             </td>
-                            <td className="py-4 overflow-hidden">
+                            <td className={`${tdPy} overflow-hidden`}>
                               {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
                               {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
                               {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
                             </td>
-                            <td className="py-4 text-right">{item.quantity?.toFixed(1)}</td>
-                            <td className="py-4 text-center">{t(item.unit,2)}</td>
-                            <td className="py-4 text-right">{fmt(item.unit_price)}</td>
-                            <td className="py-4 text-right">{fmt(item.amount)}</td>
-                            <td className="py-4 overflow-hidden">
+                            <td className={`${tdPy} text-right`}>{item.quantity?.toFixed(1)}</td>
+                            <td className={`${tdPy} text-center`}>{t(item.unit,2)}</td>
+                            <td className={`${tdPy} text-right`}>{fmt(item.unit_price)}</td>
+                            <td className={`${tdPy} text-right`}>{fmt(item.amount)}</td>
+                            <td className={`${tdPy} overflow-hidden`}>
                               {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
                               {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
                               {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
                             </td>
-                            <td className="py-4 text-center">
+                            <td className={`${tdPy} text-center`}>
                               <button onClick={() => toggleHighlight(item.id)}
                                 className={`w-5 h-5 rounded text-xs leading-none ${isHL ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-gray-100 hover:bg-yellow-200'}`}
                                 title="この行をハイライト">●</button>
