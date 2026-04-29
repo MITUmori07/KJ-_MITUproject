@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.4
+// バージョン: V6.2.5
 // 更新: 2026/04/29
-// 変更: V6.2.4 仮設・運搬・夜間を10円単位切り捨てに修正
+// 変更: V6.2.5 fix: 現場経費を引き算で計算（工事の計-税抜計）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.4'
+const VERSION = 'V6.2.5'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -502,12 +502,12 @@ export default function HistoryPage() {
   // 税抜計 = 小計 + 仮設 + 運搬 + 夜間
   const getZeinukiTotal = (section: Section) =>
     subtotal(section) + getKeihiCost(section) + getHakobiCost(section) + getNightCost(section)
-  // 現場経費 = 税抜計 × 10%（切り捨て）
-  const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
-    Math.floor(getZeinukiTotal(section) * 0.10)
   // 工事の計 = 税抜計 × 110% → 100円単位切り捨て
   const getSectionTotal = (section: Section) =>
     Math.floor(getZeinukiTotal(section) * 1.10 / 100) * 100
+  // 現場経費 = 工事の計 - 税抜計（引き算・小数点誤差なし）
+  const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
+    getSectionTotal(section) - getZeinukiTotal(section)
   const grandTotal = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
 
   const updateSectionExpense = (sectionId: string, field: 'keihiOverride'|'unbanOverride'|'nightOverride'|'genbaOverride', value: string) => {
@@ -1063,7 +1063,7 @@ export default function HistoryPage() {
                     { label: '仮設工事費（7%）', autoValue: Math.floor(sub * 0.07 / 10) * 10, field: 'keihiOverride' as const },
                     { label: '運搬費（2%）', autoValue: Math.floor(section.rows.filter(r => !r.excludeHakobi).reduce((s, r) => s + r.amount, 0) * 0.02 / 10) * 10, field: 'unbanOverride' as const },
                     { label: '夜間割増費', autoValue: Math.floor(section.rows.filter(r => r.nightWork).reduce((s, r) => { const l=(parseFloat(r.laborRate)||60)/100; const d=(parseFloat(r.nightDeepRate)||0)/100; return s+(r.amount*l*0.5)+(r.amount*l*d) }, 0) / 10) * 10, field: 'nightOverride' as const },
-                    { label: '現場経費（税抜計×10%）', autoValue: Math.floor(zeinuki * 0.10), field: 'genbaOverride' as const },
+                    { label: '現場経費', autoValue: Math.floor(zeinuki * 1.10 / 100) * 100 - zeinuki, field: 'genbaOverride' as const },
                     { label: `${section.name}の計`, autoValue: total, field: null },
                   ].map(({ label, autoValue, field }, idx) => {
                     const overrideVal = field ? section[field] : null
