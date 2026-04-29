@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.9
+// バージョン: V6.0.10
 // 更新: 2026/04/29
-// 変更: V6.0.9 特殊仮設工事の仮設工事費を0円固定
+// 変更: V6.0.10 A4設定・カンマ区切り・余白設定
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -15,6 +15,8 @@ const DATA_ROWS = 25
 const SUBTOTAL_ROWS = 6
 const THIN = { style: 'thin' as const }
 const BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN }
+const NUM_FMT = '#,##0'
+const DEC_FMT = '#,##0.0'
 
 export async function POST(req: NextRequest) {
   const { date, building, title, staff, work_type, sections } = await req.json()
@@ -90,9 +92,13 @@ export async function POST(req: NextRequest) {
     items.forEach(([name, qty, amt, unit]) => {
       const sr = ws.getRow(r)
       sr.getCell(3).value = name; sr.getCell(3).font = f(10)
-      if (qty !== null) { sr.getCell(5).value = qty; sr.getCell(5).font = f(10) }
+      if (qty !== null) {
+        sr.getCell(5).value = qty; sr.getCell(5).font = f(10)
+        sr.getCell(5).numFmt = DEC_FMT
+      }
       if (unit) { sr.getCell(6).value = unit; sr.getCell(6).font = f(10) }
       sr.getCell(8).value = amt; sr.getCell(8).font = f(10)
+      sr.getCell(8).numFmt = NUM_FMT
       sr.height = 36; bd(sr); r++; usedRows++
     })
   }
@@ -118,7 +124,9 @@ export async function POST(req: NextRequest) {
     const sr = ws.getRow(r)
     sr.getCell(2).value = idx + 1; sr.getCell(3).value = section.name
     sr.getCell(5).value = 1; sr.getCell(6).value = '式'
+    sr.getCell(5).numFmt = DEC_FMT
     sr.getCell(8).value = Math.round(getSectionTotal(section))
+    sr.getCell(8).numFmt = NUM_FMT
     ;[2,3,5,6,8].forEach(i => sr.getCell(i).font = f(10))
     sr.height = 36; bd(sr); r++
   })
@@ -126,6 +134,7 @@ export async function POST(req: NextRequest) {
   const gtRow = ws.getRow(r)
   gtRow.getCell(4).value = 'Ⅱ- 建築工事の計'
   gtRow.getCell(8).value = Math.round(sections.reduce((s: number, sec: any) => s + getSectionTotal(sec), 0))
+  gtRow.getCell(8).numFmt = NUM_FMT
   ;[4,8].forEach(i => gtRow.getCell(i).font = f(10))
   gtRow.height = 36; bd(gtRow); r++
   while (r <= 27) { const er = ws.getRow(r); er.height = 36; bd(er); r++ }
@@ -152,10 +161,15 @@ export async function POST(req: NextRequest) {
       const dr = ws.getRow(r)
       dr.getCell(3).value = name; dr.getCell(3).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(3).font = f(10)
       dr.getCell(4).value = spec; dr.getCell(4).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(4).font = f(9)
-      dr.getCell(5).value = parseFloat(row.quantity)||null; dr.getCell(5).font = f(10)
+      const qty = parseFloat(row.quantity)||null
+      dr.getCell(5).value = qty; dr.getCell(5).font = f(10)
+      if (qty !== null) dr.getCell(5).numFmt = DEC_FMT
       dr.getCell(6).value = row.unit||''; dr.getCell(6).font = f(10)
-      dr.getCell(7).value = parseFloat(row.unit_price)||null; dr.getCell(7).font = f(10)
+      const unitPrice = parseFloat(row.unit_price)||null
+      dr.getCell(7).value = unitPrice; dr.getCell(7).font = f(10)
+      if (unitPrice !== null) dr.getCell(7).numFmt = NUM_FMT
       dr.getCell(8).value = Math.round((parseFloat(row.quantity)||0)*(parseFloat(row.unit_price)||0)); dr.getCell(8).font = f(10)
+      dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
       dr.height = 36; bd(dr); r++; usedRows++
     })
@@ -164,9 +178,20 @@ export async function POST(req: NextRequest) {
   })
 
   // 印刷設定
+  ws.pageSetup.paperSize = 9  // A4
   ws.pageSetup.fitToPage = true
   ws.pageSetup.fitToWidth = 1
   ws.pageSetup.fitToHeight = 0
+
+  // 余白設定（cm → インチ換算）
+  ws.pageSetup.margins = {
+    top: 2.0 / 2.54,
+    bottom: 1.0 / 2.54,
+    left: 1.5 / 2.54,
+    right: 1.0 / 2.54,
+    header: 0.8 / 2.54,
+    footer: 0.8 / 2.54,
+  }
 
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
