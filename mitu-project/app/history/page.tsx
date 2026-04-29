@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.9
+// バージョン: V1.0.10
 // 更新: 2026/04/29
-// 変更: V1.0.9 fix: 深夜休日作業割増・現場雑費の名称対応
+// 変更: V1.0.10 feat: 夜間ボタンでnoteに自動記入
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.9'
+const VERSION = 'V1.0.10'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -511,7 +511,28 @@ export default function HistoryPage() {
   }
   const toggleRowBool = (sectionId: string, rowId: string, field: 'nightWork'|'excludeHakobi') => {
     setSections(prev => prev.map(s => s.id !== sectionId ? s : {
-      ...s, rows: s.rows.map(r => r.id !== rowId ? r : { ...r, [field]: !r[field] })
+      ...s, rows: s.rows.map(r => {
+        if (r.id !== rowId) return r
+        const newVal = !r[field]
+        if (field === 'nightWork') {
+          const NOTE_TEXT = '夜間工事割増'
+          let note1 = r.note1, note2 = r.note2, note3 = r.note3
+          if (newVal) {
+            // ON: 空いている欄に記入
+            if (!note1) note1 = NOTE_TEXT
+            else if (!note2) note2 = NOTE_TEXT
+            else if (!note3) note3 = NOTE_TEXT
+            // 全部埋まっていたら何もしない
+          } else {
+            // OFF: 夜間工事割増を削除
+            if (note1 === NOTE_TEXT) note1 = ''
+            if (note2 === NOTE_TEXT) note2 = ''
+            if (note3 === NOTE_TEXT) note3 = ''
+          }
+          return { ...r, [field]: newVal, note1, note2, note3 }
+        }
+        return { ...r, [field]: newVal }
+      })
     }))
   }
   const addSection = (name: string) => {
