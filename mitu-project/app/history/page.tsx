@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.8d
+// バージョン: V6.1.8e
 // 更新: 2026/04/28
-// 変更: V6.1.8d fix: item_pricesクエリを元に戻しalert削除
+// 変更: V6.1.8e debug: item_prices型確認
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.8d'
+const VERSION = 'V6.1.8e'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -346,9 +346,12 @@ export default function HistoryPage() {
     setPopupTab(tab)
     if (tab === 'master') {
       setPopupLoading(true)
-      const { data } = await supabase.from('items')
+      const { data, error } = await supabase.from('items')
+        .select('id,name1,item_prices(fiscal_year,price1)').order('name1').limit(3)
+      alert(`error:${JSON.stringify(error)} / data[0]:${JSON.stringify(data?.[0])} / type:${typeof data?.[0]?.item_prices} / isArray:${Array.isArray(data?.[0]?.item_prices)}`)
+      const { data: fullData } = await supabase.from('items')
         .select('id,name1,name2,name3,spec1,spec2,spec3,unit,category,item_prices(fiscal_year,price1)').order('name1')
-      setMasterItems(data || []); setPopupLoading(false)
+      setMasterItems(fullData || []); setPopupLoading(false)
     }
   }
 
