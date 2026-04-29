@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.5
+// バージョン: V6.2.6
 // 更新: 2026/04/29
-// 変更: V6.2.5 fix: 現場経費を引き算で計算（工事の計-税抜計）
+// 変更: V6.2.6 Excel出力をhistory画面の計算値に統一
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.5'
+const VERSION = 'V6.2.6'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -523,9 +523,18 @@ export default function HistoryPage() {
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     if (!copyInfo.title) { alert('件名を入力してください'); return }
     await saveDraft()
+    // 経費計算値をsectionsに含めてAPIに渡す
+    const sectionsWithExpenses = sections.map(s => ({
+      ...s,
+      keihi: getKeihiCost(s),
+      unban: getHakobiCost(s),
+      night: getNightCost(s),
+      genba: getGenbaCost(s),
+      sectionTotal: getSectionTotal(s),
+    }))
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: copyInfo.date, building: copyInfo.building, title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type, sections })
+      body: JSON.stringify({ date: copyInfo.date, building: copyInfo.building, title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type, sections: sectionsWithExpenses })
     })
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
