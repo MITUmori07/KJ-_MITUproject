@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.0
+// バージョン: V6.2.1
 // 更新: 2026/04/28
-// 変更: V6.2.0 品目選択後の確認を3択モーダルに変更（書き換え・下追加・キャンセル）
+// 変更: V6.2.1 コピー編集に経費行（仮設・運搬・夜間・現場経費・工事の計）を追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.0'
+const VERSION = 'V6.2.1'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -52,7 +52,13 @@ type Row = {
   laborRate: string; nightDeepRate: string
   source_flag: number
 }
-type Section = { id: string; name: string; rows: Row[] }
+type Section = {
+  id: string; name: string; rows: Row[]
+  keihiOverride: number|null   // 仮設工事費（手動上書き可）
+  unbanOverride: number|null   // 運搬費（手動上書き可）
+  nightOverride: number|null   // 夜間割増費（手動上書き可）
+  genbaOverride: number|null   // 現場経費（手動上書き可）
+}
 type Filters = { staff: string; building: string; workType: string; year: string }
 type CopyInfo = {
   building: string; staff: string; work_type: string
@@ -138,7 +144,7 @@ export default function HistoryPage() {
 
   // 新規作成
   const handleNewEstimate = () => {
-    setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [] }])
+    setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null }])
     setCopyInfo({
       building: '新宿FT', staff: '', work_type: 'A工事',
       draft_id: null, date: '', title: '',
@@ -179,7 +185,8 @@ export default function HistoryPage() {
         showCandidates: false, source_estimate_item_id: item.id,
         nightWork: false, excludeHakobi: false, laborRate: '60', nightDeepRate: '0',
         source_flag: 1,  // 1=Excelから取り込んだデータのコピー
-      }))
+      })),
+      keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null,
     }))
     setSections(newSections); copyItemsRef.current = freshItems
     const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
@@ -471,7 +478,7 @@ export default function HistoryPage() {
   const addSection = (name: string) => {
     if (!name.trim()) return
     setSections(prev => {
-      const newS = { id: Math.random().toString(36).slice(2), name, rows: [] }
+      const newS = { id: Math.random().toString(36).slice(2), name, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null }
       const withoutLast = prev.filter(s => s.name !== LAST_SECTION)
       const last = prev.find(s => s.name === LAST_SECTION)
       return last ? [...withoutLast, newS, last] : [...withoutLast, newS]
@@ -480,14 +487,26 @@ export default function HistoryPage() {
   }
 
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
-  const grandTotal = sections.reduce((sum, s) => sum + subtotal(s), 0)
-  const getNightCost = (section: Section) => section.rows.filter(r => r.nightWork).reduce((sum, r) => {
+  const grandTotal = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
+  const getNightCost = (section: Section) => section.nightOverride !== null ? section.nightOverride : section.rows.filter(r => r.nightWork).reduce((sum, r) => {
     const labor = (parseFloat(r.laborRate)||60) / 100
     const deep = (parseFloat(r.nightDeepRate)||0) / 100
     return sum + (r.amount * labor * 0.5) + (r.amount * labor * deep)
   }, 0)
-  const getHakobiCost = (section: Section) =>
+  const getHakobiCost = (section: Section) => section.unbanOverride !== null ? section.unbanOverride :
     Math.round(section.rows.filter(r => !r.excludeHakobi).reduce((sum, r) => sum + r.amount, 0) * 0.02)
+  const getKeihiCost = (section: Section) => section.keihiOverride !== null ? section.keihiOverride :
+    Math.round(subtotal(section) * 0.07)
+  const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
+    Math.round(subtotal(section) * 0.10)
+  const getSectionTotal = (section: Section) =>
+    subtotal(section) + Math.round(getNightCost(section)) + getHakobiCost(section) + getKeihiCost(section) + getGenbaCost(section)
+
+  const updateSectionExpense = (sectionId: string, field: 'keihiOverride'|'unbanOverride'|'nightOverride'|'genbaOverride', value: string) => {
+    setSections(prev => prev.map(s => s.id !== sectionId ? s : {
+      ...s, [field]: value === '' ? null : Math.round(parseFloat(value)||0)
+    }))
+  }
 
   const handleExport = async () => {
     if (!copyInfo) return
@@ -895,8 +914,6 @@ export default function HistoryPage() {
 
       <div className="max-w-6xl mx-auto p-4">
         {sections.map(section => {
-          const nightCost = Math.round(getNightCost(section))
-          const hakobiCost = getHakobiCost(section)
           return (
             <div key={section.id} className="mb-6">
               <div className="flex items-center justify-between bg-blue-800 text-white px-4 py-2 rounded-t">
@@ -1023,18 +1040,43 @@ export default function HistoryPage() {
                   <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
                 </div>
               </div>
-              {/* 夜間割増費・搬入費 */}
-              <div className="border border-t-0 bg-blue-50 px-4 divide-y divide-blue-100">
-                {nightCost > 0 && (
-                  <div className="flex justify-between items-center py-1 text-sm text-blue-700">
-                    <span className="text-xs">　夜間割増費</span>
-                    <span>{nightCost.toLocaleString()} 円</span>
+              {/* 経費エリア（6行） */}
+              <div className="border border-t-0 rounded-b bg-gray-50">
+                {[
+                  { label: '小計', value: subtotal(section), field: null, auto: true },
+                  { label: '仮設工事費（7%）', value: getKeihiCost(section), field: 'keihiOverride' as const, auto: section.keihiOverride === null },
+                  { label: '運搬費（2%）', value: getHakobiCost(section), field: 'unbanOverride' as const, auto: section.unbanOverride === null },
+                  { label: '夜間割増費', value: Math.round(getNightCost(section)), field: 'nightOverride' as const, auto: section.nightOverride === null },
+                  { label: '現場経費（10%）', value: getGenbaCost(section), field: 'genbaOverride' as const, auto: section.genbaOverride === null },
+                  { label: `${section.name}の計`, value: getSectionTotal(section), field: null, auto: true },
+                ].map(({ label, value, field, auto }, idx) => (
+                  <div key={idx} className={`flex items-center justify-between px-4 py-1 border-t text-sm ${idx === 5 ? 'bg-gray-200 font-bold' : ''}`}>
+                    <span className="text-xs text-gray-600 w-40">
+                      {label}
+                      {field && auto && <span className="text-gray-400 ml-1">（自動）</span>}
+                      {field && !auto && <span className="text-blue-500 ml-1">（手動）</span>}
+                    </span>
+                    {field ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          className={`border rounded px-2 py-0.5 text-xs text-right w-28 ${!auto ? 'border-blue-400 bg-blue-50' : 'bg-white'}`}
+                          value={!auto ? String(value) : ''}
+                          placeholder={String(value)}
+                          onChange={e => updateSectionExpense(section.id, field, e.target.value)}
+                          onBlur={e => { if (e.target.value === '') updateSectionExpense(section.id, field, '') }}
+                        />
+                        {!auto && (
+                          <button onClick={() => updateSectionExpense(section.id, field, '')}
+                            className="text-xs text-gray-400 hover:text-red-500" title="自動計算に戻す">↩</button>
+                        )}
+                        <span className="text-xs text-gray-500">{auto ? value.toLocaleString() : ''} 円</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm font-medium">{value.toLocaleString()} 円</span>
+                    )}
                   </div>
-                )}
-                <div className="flex justify-between items-center py-1 text-sm text-gray-600">
-                  <span className="text-xs">　搬入費（2%）</span>
-                  <span>{hakobiCost.toLocaleString()} 円</span>
-                </div>
+                ))}
               </div>
             </div>
           )
