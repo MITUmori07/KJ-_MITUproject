@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.0'
+const VERSION = 'V1.0.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -112,6 +112,7 @@ export default function HistoryPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
   const [currentRowName, setCurrentRowName] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
+  const [rowHeight, setRowHeight] = useState<'small'|'large'>('large')
   const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new Set())
   const toggleHighlight = (id: number) => {
     setHighlightedItems(prev => {
@@ -964,6 +965,11 @@ export default function HistoryPage() {
           <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
           <div className="ml-auto flex gap-2 items-center">
             {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
+            <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
+              className="border border-gray-400 rounded px-2 py-1 text-xs bg-white hover:bg-gray-100 font-bold"
+              title="行の高さを切り替え">
+              {rowHeight === 'large' ? '小' : '大'}
+            </button>
             {/* 2画面トグル */}
             {is2Pane ? (
               <button onClick={() => setIs2Pane(false)}
@@ -1266,6 +1272,11 @@ export default function HistoryPage() {
             fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap',
           }} title="2画面モード">2画面</button>
         )}
+        <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
+          className="border border-gray-400 rounded px-2 py-0.5 text-xs bg-white hover:bg-gray-100 whitespace-nowrap font-bold"
+          title="行の高さを切り替え">
+          {rowHeight === 'large' ? '小' : '大'}
+        </button>
         <button onClick={resetFilters}
           className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap"
           title="フィルターリセット">←</button>
@@ -1308,7 +1319,7 @@ export default function HistoryPage() {
                         {sectionItems.map(item => {
                           const isHL = highlightedItems.has(item.id)
                           return (
-                          <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
+                          <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`} style={{minHeight: rowHeight === 'large' ? '160px' : '40px'}}>
                             <td className="py-4 text-center">{String(item.row_order).slice(0,2)}</td>
                             <td className="py-4 overflow-hidden">
                               {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
