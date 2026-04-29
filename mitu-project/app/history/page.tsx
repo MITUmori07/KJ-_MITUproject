@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.6'
+const VERSION = 'V1.0.7'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -609,7 +609,7 @@ export default function HistoryPage() {
     const sectionItems = normalItems.filter(i => i.work_section === sectionName)
     const expenses = items.filter(i => i.work_section === `経費_${sectionName}`)
     const subtotalVal = sectionItems.reduce((sum, i) => sum + (i.amount||0), 0)
-    const expTotal = expenses.reduce((sum, i) => sum + (i.amount||0), 0)
+    const expTotal = expenses.filter(e => e.name1 !== '小計').reduce((sum, i) => sum + (i.amount||0), 0)
     return { sectionItems, expenses, subtotal: subtotalVal, total: Math.floor((subtotalVal + expTotal) / 100) * 100 }
   }
   const historyGrandTotal = sectionNames.reduce((sum, name) => sum + getSectionData(name).total, 0)
