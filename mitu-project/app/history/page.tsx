@@ -1309,7 +1309,7 @@ export default function HistoryPage() {
                           const isHL = highlightedItems.has(item.id)
                           return (
                           <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
-                            <td className={`${p} text-center`}>{String(item.row_order).slice(0,2)}</td>
+                            <td className="py-4 text-center">{String(item.row_order).slice(0,2)}</td>
                             <td className="py-4 overflow-hidden">
                               {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
                               {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
