@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.8b
+// バージョン: V1.0.8c
 // 更新: 2026/04/29
-// 変更: V1.0.8b fix: 2画面自動切替の順番修正
+// 変更: V1.0.8c fix: useEffectで2画面自動切替
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.8b'
+const VERSION = 'V1.0.8c'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -124,6 +124,7 @@ export default function HistoryPage() {
   }
 
   useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
+  useEffect(() => { if (showEstimate) setIs2Pane(true) }, [showEstimate])
 
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
@@ -220,7 +221,7 @@ export default function HistoryPage() {
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
       source_title: selectedEstimate.title,
     })
-    setIs2Pane(true); setCopying(false); setShowEstimate(true)
+    setCopying(false); setShowEstimate(true)
   }
 
   const loadDrafts = async () => {
