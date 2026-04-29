@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
   // 手動改ページ（29行ごと）
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
-    ws.rowBreaks.push({ id: br, man: true } as any)
+    ws.getRow(br).addPageBreak()
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer()
