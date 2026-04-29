@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.3'
+const VERSION = 'V1.0.4'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1318,7 +1318,7 @@ export default function HistoryPage() {
                       <tbody>
                         {sectionItems.map(item => {
                           const isHL = highlightedItems.has(item.id)
-                          const tdPy = rowHeight === 'large' ? 'py-10' : 'py-1'
+                          const tdPy = rowHeight === 'large' ? 'py-9' : 'py-1'
                           return (
                           <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
                             <td className={`${tdPy} text-center`}>{String(item.row_order).slice(0,2)}</td>
