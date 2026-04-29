@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.9b
+// バージョン: V6.3.0
 // 更新: 2026/04/29
-// 変更: V6.2.9b fix: 特殊仮設工事の仮設工事費表示を0円に修正
+// 変更: V6.3.0 feat: 行高さ切り替え・行ハイライト機能
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.9b'
+const VERSION = 'V6.3.0'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -112,6 +112,16 @@ export default function HistoryPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([2026, 2025])
   const [currentRowName, setCurrentRowName] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
+  const [rowHeight, setRowHeight] = useState<'small'|'large'>('large')
+  const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new Set())
+  const toggleHighlight = (id: number) => {
+    setHighlightedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
 
@@ -649,7 +659,7 @@ export default function HistoryPage() {
     a.click()
   }
 
-  const colWidths = { no:'3%', name:'26%', spec:'24%', qty:'6%', unit:'4%', price:'10%', amount:'11%', note:'16%' }
+  const colWidths = { no:'3%', name:'25%', spec:'22%', qty:'6%', unit:'4%', price:'10%', amount:'11%', note:'15%', hl:'4%' }
 
   // ② モードバッジ
   const modeBadge = (mode: CopyMode|null) => {
@@ -955,6 +965,12 @@ export default function HistoryPage() {
           <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
           <div className="ml-auto flex gap-2 items-center">
             {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
+            {/* 行高さトグル */}
+            <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
+              className="border border-gray-400 rounded px-2 py-1 text-xs bg-white hover:bg-gray-100 font-bold"
+              title="行の高さを切り替え">
+              {rowHeight === 'small' ? '大' : '小'}
+            </button>
             {/* 2画面トグル */}
             {is2Pane ? (
               <button onClick={() => setIs2Pane(false)}
@@ -1027,14 +1043,16 @@ export default function HistoryPage() {
                         </td>
                         <td className="p-1">
                           {['name1','name2','name3'].map((f,i) => (
-                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
+                            rowHeight === 'small' && i > 0 ? null :
+                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2 && rowHeight==='large'?'mb-1':''}`}
                               value={row[f as keyof Row] as string} placeholder={`名称${i+1}段目`}
                               onChange={e => updateRow(section.id, row.id, f, e.target.value)} />
                           ))}
                         </td>
                         <td className="p-1">
                           {['spec1','spec2','spec3'].map((f,i) => (
-                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
+                            rowHeight === 'small' && i > 0 ? null :
+                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2 && rowHeight==='large'?'mb-1':''}`}
                               value={row[f as keyof Row] as string} placeholder={`仕様${i+1}段目`}
                               onChange={e => updateRow(section.id, row.id, f, e.target.value)} />
                           ))}
@@ -1047,25 +1065,28 @@ export default function HistoryPage() {
                             onBlur={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) updateRow(section.id, row.id, 'quantity', v.toFixed(1)) }} />
                         </td>
                         <td className="p-1">
-                          <select className="w-full border rounded px-1 py-1 mb-1" value={row.unit}
-                            onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)}>
-                            <option value="">選択</option>
-                            {units.map(u => <option key={u} value={u}>{u}</option>)}
-                          </select>
+                          {rowHeight === 'large' && (
+                            <select className="w-full border rounded px-1 py-1 mb-1" value={row.unit}
+                              onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)}>
+                              <option value="">選択</option>
+                              {units.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          )}
                           <input className="w-full border rounded px-2 py-1 text-xs" value={row.unit} placeholder="自由入力"
                             onChange={e => updateRow(section.id, row.id, 'unit', e.target.value)} />
                         </td>
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 text-right" value={row.unit_price} type="number"
                             onChange={e => updateRow(section.id, row.id, 'unit_price', e.target.value)} />
-                          {row.source_estimate_item_id && (
+                          {rowHeight === 'large' && row.source_estimate_item_id && (
                             <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
                           )}
                         </td>
                         <td className="p-1 text-right pr-2 pt-2">{row.amount.toLocaleString()}</td>
                         <td className="p-1">
                           {['note1','note2','note3'].map((f,i) => (
-                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
+                            rowHeight === 'small' && i > 0 ? null :
+                            <input key={f} className={`w-full border rounded px-2 py-1 ${i<2 && rowHeight==='large'?'mb-1':''}`}
                               value={row[f as keyof Row] as string} placeholder={`備考${i+1}段目`}
                               onChange={e => updateRow(section.id, row.id, f, e.target.value)} />
                           ))}
@@ -1257,6 +1278,11 @@ export default function HistoryPage() {
             fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap',
           }} title="2画面モード">2画面</button>
         )}
+        <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
+          className="border border-gray-400 rounded px-2 py-0.5 text-xs bg-white hover:bg-gray-100 whitespace-nowrap font-bold"
+          title="行の高さを切り替え">
+          {rowHeight === 'small' ? '大' : '小'}
+        </button>
         <button onClick={resetFilters}
           className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap"
           title="フィルターリセット">←</button>
@@ -1292,33 +1318,43 @@ export default function HistoryPage() {
                           <th className="p-1 text-left">仕様</th><th className="p-1 text-right">数量</th>
                           <th className="p-1 text-center">単位</th><th className="p-1 text-right">単価</th>
                           <th className="p-1 text-right">金額</th><th className="p-1 text-left">備考</th>
+                          <th className="p-1 text-center"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {sectionItems.map(item => (
-                          <tr key={item.id} className="border-t align-top">
-                            <td className="p-1 text-center">{String(item.row_order).slice(0,2)}</td>
-                            <td className="p-1 overflow-hidden">
+                        {sectionItems.map(item => {
+                          const isHL = highlightedItems.has(item.id)
+                          const p = rowHeight === 'small' ? 'p-0.5' : 'p-1'
+                          return (
+                          <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
+                            <td className={`${p} text-center`}>{String(item.row_order).slice(0,2)}</td>
+                            <td className={`${p} overflow-hidden`}>
                               {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
-                              {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
-                              {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
+                              {rowHeight === 'large' && item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
+                              {rowHeight === 'large' && item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
                             </td>
-                            <td className="p-1 overflow-hidden">
+                            <td className={`${p} overflow-hidden`}>
                               {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
-                              {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
-                              {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
+                              {rowHeight === 'large' && item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
+                              {rowHeight === 'large' && item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
                             </td>
-                            <td className="p-1 text-right">{item.quantity?.toFixed(1)}</td>
-                            <td className="p-1 text-center">{t(item.unit,2)}</td>
-                            <td className="p-1 text-right">{fmt(item.unit_price)}</td>
-                            <td className="p-1 text-right">{fmt(item.amount)}</td>
-                            <td className="p-1 overflow-hidden">
+                            <td className={`${p} text-right`}>{item.quantity?.toFixed(1)}</td>
+                            <td className={`${p} text-center`}>{t(item.unit,2)}</td>
+                            <td className={`${p} text-right`}>{fmt(item.unit_price)}</td>
+                            <td className={`${p} text-right`}>{fmt(item.amount)}</td>
+                            <td className={`${p} overflow-hidden`}>
                               {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
-                              {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
-                              {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
+                              {rowHeight === 'large' && item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
+                              {rowHeight === 'large' && item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
+                            </td>
+                            <td className={`${p} text-center`}>
+                              <button onClick={() => toggleHighlight(item.id)}
+                                className={`w-5 h-5 rounded text-xs leading-none ${isHL ? 'bg-yellow-400 hover:bg-yellow-500' : 'bg-gray-100 hover:bg-yellow-200'}`}
+                                title="この行をハイライト">●</button>
                             </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                         {expenses.map(exp => (
                           <tr key={exp.id} className="border-t bg-gray-50 align-top">
                             <td className="p-1"></td>
@@ -1329,6 +1365,7 @@ export default function HistoryPage() {
                             <td className="p-1 text-right text-gray-600">{fmt(exp.unit_price)}</td>
                             <td className="p-1 text-right text-gray-600">{fmt(exp.amount)}</td>
                             <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.note1,7)}</td>
+                            <td className="p-1"></td>
                           </tr>
                         ))}
                       </tbody>
