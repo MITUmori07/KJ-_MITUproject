@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.1b
+// バージョン: V6.2.2
 // 更新: 2026/04/29
-// 変更: V6.2.1b fix: grandTotalをgetSectionTotalの後に移動（定義順エラー修正）
+// 変更: V6.2.2 経費エリアのレイアウト変更（計算値常時表示＋横に上書き入力欄）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.1b'
+const VERSION = 'V6.2.2'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1043,40 +1043,42 @@ export default function HistoryPage() {
               {/* 経費エリア（6行） */}
               <div className="border border-t-0 rounded-b bg-gray-50">
                 {[
-                  { label: '小計', value: subtotal(section), field: null, auto: true },
-                  { label: '仮設工事費（7%）', value: getKeihiCost(section), field: 'keihiOverride' as const, auto: section.keihiOverride === null },
-                  { label: '運搬費（2%）', value: getHakobiCost(section), field: 'unbanOverride' as const, auto: section.unbanOverride === null },
-                  { label: '夜間割増費', value: Math.round(getNightCost(section)), field: 'nightOverride' as const, auto: section.nightOverride === null },
-                  { label: '現場経費（10%）', value: getGenbaCost(section), field: 'genbaOverride' as const, auto: section.genbaOverride === null },
-                  { label: `${section.name}の計`, value: getSectionTotal(section), field: null, auto: true },
-                ].map(({ label, value, field, auto }, idx) => (
-                  <div key={idx} className={`flex items-center justify-between px-4 py-1 border-t text-sm ${idx === 5 ? 'bg-gray-200 font-bold' : ''}`}>
-                    <span className="text-xs text-gray-600 w-40">
-                      {label}
-                      {field && auto && <span className="text-gray-400 ml-1">（自動）</span>}
-                      {field && !auto && <span className="text-blue-500 ml-1">（手動）</span>}
-                    </span>
-                    {field ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          className={`border rounded px-2 py-0.5 text-xs text-right w-28 ${!auto ? 'border-blue-400 bg-blue-50' : 'bg-white'}`}
-                          value={!auto ? String(value) : ''}
-                          placeholder={String(value)}
-                          onChange={e => updateSectionExpense(section.id, field, e.target.value)}
-                          onBlur={e => { if (e.target.value === '') updateSectionExpense(section.id, field, '') }}
-                        />
-                        {!auto && (
-                          <button onClick={() => updateSectionExpense(section.id, field, '')}
-                            className="text-xs text-gray-400 hover:text-red-500" title="自動計算に戻す">↩</button>
-                        )}
-                        <span className="text-xs text-gray-500">{auto ? value.toLocaleString() : ''} 円</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm font-medium">{value.toLocaleString()} 円</span>
-                    )}
-                  </div>
-                ))}
+                  { label: '小計', autoValue: subtotal(section), field: null },
+                  { label: '仮設工事費（7%）', autoValue: Math.round(subtotal(section) * 0.07), field: 'keihiOverride' as const },
+                  { label: '運搬費（2%）', autoValue: Math.round(section.rows.filter(r => !r.excludeHakobi).reduce((sum, r) => sum + r.amount, 0) * 0.02), field: 'unbanOverride' as const },
+                  { label: '夜間割増費', autoValue: Math.round(section.rows.filter(r => r.nightWork).reduce((sum, r) => { const l=(parseFloat(r.laborRate)||60)/100; const d=(parseFloat(r.nightDeepRate)||0)/100; return sum+(r.amount*l*0.5)+(r.amount*l*d) }, 0)), field: 'nightOverride' as const },
+                  { label: '現場経費（10%）', autoValue: Math.round(subtotal(section) * 0.10), field: 'genbaOverride' as const },
+                  { label: `${section.name}の計`, autoValue: getSectionTotal(section), field: null },
+                ].map(({ label, autoValue, field }, idx) => {
+                  const overrideVal = field ? section[field] : null
+                  const displayVal = overrideVal !== null ? overrideVal : autoValue
+                  return (
+                    <div key={idx} className={`flex items-center gap-2 px-3 py-1.5 border-t text-xs ${idx === 5 ? 'bg-gray-200 font-bold text-sm' : 'text-gray-600'}`}>
+                      <span className="w-36 shrink-0">{label}</span>
+                      {/* 計算値を常時表示 */}
+                      <span className="w-24 text-right text-gray-500">{autoValue.toLocaleString()}</span>
+                      {/* 上書き入力欄（小計・工事の計は非表示） */}
+                      {field ? (
+                        <div className="flex items-center gap-1 ml-auto">
+                          {overrideVal !== null && (
+                            <button onClick={() => updateSectionExpense(section.id, field, '')}
+                              className="text-gray-400 hover:text-red-500 text-xs" title="自動計算に戻す">↩</button>
+                          )}
+                          <input
+                            type="number"
+                            className={`border rounded px-2 py-0.5 text-xs text-right w-24 ${overrideVal !== null ? 'border-blue-400 bg-blue-50 font-bold' : 'bg-white border-gray-300'}`}
+                            value={overrideVal !== null ? String(overrideVal) : ''}
+                            placeholder="上書き"
+                            onChange={e => updateSectionExpense(section.id, field, e.target.value)}
+                          />
+                          <span className="text-gray-400 shrink-0">円</span>
+                        </div>
+                      ) : (
+                        <span className="ml-auto font-bold">{displayVal.toLocaleString()} 円</span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
