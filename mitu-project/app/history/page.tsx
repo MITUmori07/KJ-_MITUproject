@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.6
+// バージョン: V6.2.7
 // 更新: 2026/04/29
-// 変更: V6.2.6 Excel出力をhistory画面の計算値に統一
+// 変更: V6.2.7 handleExportHistoryに経費値を追加（工事の計が0になる問題修正）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.6'
+const VERSION = 'V6.2.7'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -576,15 +576,28 @@ export default function HistoryPage() {
   const handleExportHistory = async () => {
     if (!selectedEstimate) return
     const exportSections = sectionNames.map(name => {
-      const { sectionItems } = getSectionData(name)
-      return { id: name, name, rows: sectionItems.map(item => ({
-        id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
-        spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
-        quantity: String(item.quantity), unit: item.unit||'',
-        unit_price: String(item.unit_price), amount: item.amount,
-        note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
-        candidates: [], showCandidates: false,
-      }))}
+      const { sectionItems, expenses, subtotal: sub, total } = getSectionData(name)
+      // 経費行から各経費を取得
+      const getExpenseAmount = (expName: string) => {
+        const exp = expenses.find(e => e.name1 === expName)
+        return exp ? (exp.amount || 0) : 0
+      }
+      const keihi = getExpenseAmount('仮設工事費')
+      const unban = getExpenseAmount('運搬費')
+      const night = getExpenseAmount('深夜作業割増')
+      const genba = getExpenseAmount('現場経費')
+      return {
+        id: name, name,
+        rows: sectionItems.map(item => ({
+          id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
+          spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
+          quantity: String(item.quantity), unit: item.unit||'',
+          unit_price: String(item.unit_price), amount: item.amount,
+          note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
+          candidates: [], showCandidates: false,
+        })),
+        keihi, unban, night, genba, sectionTotal: total,
+      }
     })
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
