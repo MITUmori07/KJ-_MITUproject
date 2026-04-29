@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.2.1
-// 更新: 2026/04/28
-// 変更: V6.2.1 コピー編集に経費行（仮設・運搬・夜間・現場経費・工事の計）を追加
+// バージョン: V6.2.1b
+// 更新: 2026/04/29
+// 変更: V6.2.1b fix: grandTotalをgetSectionTotalの後に移動（定義順エラー修正）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.2.1'
+const VERSION = 'V6.2.1b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -487,7 +487,6 @@ export default function HistoryPage() {
   }
 
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
-  const grandTotal = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
   const getNightCost = (section: Section) => section.nightOverride !== null ? section.nightOverride : section.rows.filter(r => r.nightWork).reduce((sum, r) => {
     const labor = (parseFloat(r.laborRate)||60) / 100
     const deep = (parseFloat(r.nightDeepRate)||0) / 100
@@ -501,6 +500,7 @@ export default function HistoryPage() {
     Math.round(subtotal(section) * 0.10)
   const getSectionTotal = (section: Section) =>
     subtotal(section) + Math.round(getNightCost(section)) + getHakobiCost(section) + getKeihiCost(section) + getGenbaCost(section)
+  const grandTotal = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
 
   const updateSectionExpense = (sectionId: string, field: 'keihiOverride'|'unbanOverride'|'nightOverride'|'genbaOverride', value: string) => {
     setSections(prev => prev.map(s => s.id !== sectionId ? s : {
