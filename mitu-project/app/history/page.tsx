@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.5'
+const VERSION = 'V1.0.6'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1318,30 +1318,30 @@ export default function HistoryPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sectionItems.map(item => {
+                        {sectionItems.map((item, itemIdx) => {
                           const isHL = highlightedItems.has(item.id)
                           const tdPy = rowHeight === 'large' ? 'py-9' : 'py-1'
                           return (
                           <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
-                            <td className={`${tdPy} text-center`}>{String(item.row_order).slice(0,2)}</td>
+                            <td className={`${tdPy} text-center`}>{itemIdx + 1}</td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.name1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.name1,12)}</div>}
-                              {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name2,12)}</div>}
-                              {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.name3,12)}</div>}
+                              {item.name1 && <div className="truncate" style={{fontSize:'12px'}}>{t(item.name1,12)}</div>}
+                              {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'12px'}}>{t(item.name2,12)}</div>}
+                              {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'12px'}}>{t(item.name3,12)}</div>}
                             </td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.spec1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.spec1,16)}</div>}
-                              {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec2,16)}</div>}
-                              {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.spec3,16)}</div>}
+                              {item.spec1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.spec1,16)}</div>}
+                              {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.spec2,16)}</div>}
+                              {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.spec3,16)}</div>}
                             </td>
                             <td className={`${tdPy} text-right`}>{item.quantity?.toFixed(1)}</td>
                             <td className={`${tdPy} text-center`}>{t(item.unit,2)}</td>
                             <td className={`${tdPy} text-right`}>{fmt(item.unit_price)}</td>
                             <td className={`${tdPy} text-right`}>{fmt(item.amount)}</td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.note1 && <div className="truncate" style={{fontSize:'10px'}}>{t(item.note1,7)}</div>}
-                              {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note2,7)}</div>}
-                              {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'10px'}}>{t(item.note3,7)}</div>}
+                              {item.note1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.note1,7)}</div>}
+                              {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.note2,7)}</div>}
+                              {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.note3,7)}</div>}
                             </td>
                             <td className={`${tdPy} text-center`}>
                               <button onClick={() => toggleHighlight(item.id)}
@@ -1351,19 +1351,25 @@ export default function HistoryPage() {
                           </tr>
                           )
                         })}
-                        {expenses.map(exp => (
-                          <tr key={exp.id} className="border-t bg-gray-50 align-top">
-                            <td className="p-1"></td>
-                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.name1,12)}</td>
-                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.spec1,16)}</td>
-                            <td className="p-1 text-right text-gray-600">{exp.quantity?.toFixed(1)}</td>
-                            <td className="p-1 text-center text-gray-600">{t(exp.unit,2)}</td>
-                            <td className="p-1 text-right text-gray-600">{fmt(exp.unit_price)}</td>
-                            <td className="p-1 text-right text-gray-600">{fmt(exp.amount)}</td>
-                            <td className="p-1 text-gray-600 truncate" style={{fontSize:'10px'}}>{t(exp.note1,7)}</td>
-                            <td className="p-1"></td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const expNames = ['小計', '仮設工事費', '運搬費', '深夜作業割増', '現場経費']
+                          const normalizedExp = expNames.map(name =>
+                            expenses.find(e => e.name1 === name) || { id: name, name1: name, amount: 0, quantity: 0, unit: '', spec1: null, note1: null }
+                          )
+                          return normalizedExp.map(exp => (
+                            <tr key={exp.id} className="border-t bg-gray-50 align-top">
+                              <td className="py-3"></td>
+                              <td className="py-3 text-gray-600 truncate" style={{fontSize:'12px'}}>{t(exp.name1,12)}</td>
+                              <td className="py-3 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.spec1,16)}</td>
+                              <td className="py-3 text-right text-gray-600">{exp.quantity > 0 ? exp.quantity?.toFixed(1) : ''}</td>
+                              <td className="py-3 text-center text-gray-600">{t(exp.unit,2)}</td>
+                              <td className="py-3 text-right text-gray-600"></td>
+                              <td className="py-3 text-right text-gray-600">{fmt(exp.amount)}</td>
+                              <td className="py-3 text-gray-600 truncate" style={{fontSize:'11px'}}>{t(exp.note1,7)}</td>
+                              <td className="py-3"></td>
+                            </tr>
+                          ))
+                        })()}
                       </tbody>
                     </table>
                   </div>
