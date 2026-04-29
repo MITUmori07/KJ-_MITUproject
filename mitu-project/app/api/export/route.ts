@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.8b
+// バージョン: V6.0.8c
 // 更新: 2026/04/29
-// 変更: V6.0.8b debug: writeSubtotalの受け取り値をconsole.logで確認
+// 変更: V6.0.8c debug console.log削除
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -72,9 +72,7 @@ export async function POST(req: NextRequest) {
     const night = section.night || 0
     const genba = section.genba || 0
     const sectionTotal = section.sectionTotal || 0
-    // デバッグ
-    console.log(`[${section.name}] subtotal=${subtotal} keihi=${keihi} unban=${unban} night=${night} genba=${genba} sectionTotal=${sectionTotal}`)
-
+    // デバッグ削除済み
     const remaining = DATA_ROWS - usedRows
     if (remaining < SUBTOTAL_ROWS) {
       while (usedRows < DATA_ROWS) addEmptyRow()
