@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V6.1.9b
+// バージョン: V6.2.0
 // 更新: 2026/04/28
-// 変更: V6.1.9b fix: selectMasterItemのprice1 null対応
+// 変更: V6.2.0 品目選択後の確認を3択モーダルに変更（書き換え・下追加・キャンセル）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V6.1.9b'
+const VERSION = 'V6.2.0'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -86,6 +86,8 @@ export default function HistoryPage() {
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [showApplyModal, setShowApplyModal] = useState(false)
+  const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
   // ② モーダル
   const [copyMode, setCopyMode] = useState<CopyMode|null>(null)
@@ -357,7 +359,7 @@ export default function HistoryPage() {
       setSections(prev => prev.map(s => s.id !== sectionId ? s : {
         ...s, rows: s.rows.map(r => r.id !== rowId ? r : { ...r, ...newData, amount: 0, showCandidates: false })
       }))
-      setPopup(null)
+      setPopup(null); setShowApplyModal(false); setPendingApply(null)
     }
     const doInsert = () => {
       const row = { ...newRow(), ...newData, amount: 0 }
@@ -367,10 +369,14 @@ export default function HistoryPage() {
         const rows = [...s.rows]; rows.splice(idx + 1, 0, row)
         return { ...s, rows }
       }))
-      setPopup(null)
+      setPopup(null); setShowApplyModal(false); setPendingApply(null)
     }
     if (currentRowName) {
-      window.confirm('書き換えますか？\nOK = 書き換え　キャンセル = 下に追加') ? doOverwrite() : doInsert()
+      setPendingApply({ newData, sectionId, rowId })
+      setShowApplyModal(true)
+      // doOverwrite/doInsertはモーダルから呼ぶ
+      // ここでは一旦保留
+      return
     } else { doOverwrite() }
   }
 
@@ -643,6 +649,56 @@ export default function HistoryPage() {
         <div className="px-4 pb-4 border-t pt-3">
           <button onClick={() => setShowDraftListModal(false)}
             className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 border rounded-lg">キャンセル</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ==================== 3択モーダル（書き換え・下追加・キャンセル）====================
+  const renderApplyModal = () => !showApplyModal || !pendingApply ? null : (
+    <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xs">
+        <div className="px-5 py-4 border-b">
+          <h2 className="text-sm font-bold text-gray-800">この品目をどうしますか？</h2>
+          <p className="text-xs text-gray-500 mt-1">現在の行: 「{currentRowName}」</p>
+        </div>
+        <div className="p-4 flex flex-col gap-3">
+          <button
+            onClick={() => {
+              const { newData, sectionId, rowId } = pendingApply
+              setSections(prev => prev.map(s => s.id !== sectionId ? s : {
+                ...s, rows: s.rows.map(r => r.id !== rowId ? r : { ...r, ...newData, amount: 0, showCandidates: false })
+              }))
+              setPopup(null); setShowApplyModal(false); setPendingApply(null)
+            }}
+            className="w-full border-2 border-red-200 rounded-lg px-4 py-3 text-left hover:bg-red-50"
+            title="現在の行の内容を選んだ品目で上書きします">
+            <div className="font-bold text-red-700 text-sm">書き換え</div>
+            <div className="text-xs text-gray-400 mt-0.5">現在の行を選んだ品目で上書き</div>
+          </button>
+          <button
+            onClick={() => {
+              const { newData, sectionId, rowId } = pendingApply
+              const row = { ...newRow(), ...newData, amount: 0 }
+              setSections(prev => prev.map(s => {
+                if (s.id !== sectionId) return s
+                const idx = s.rows.findIndex(r => r.id === rowId)
+                const rows = [...s.rows]; rows.splice(idx + 1, 0, row)
+                return { ...s, rows }
+              }))
+              setPopup(null); setShowApplyModal(false); setPendingApply(null)
+            }}
+            className="w-full border-2 border-blue-200 rounded-lg px-4 py-3 text-left hover:bg-blue-50"
+            title="現在の行はそのまま残して、下に新しい行を追加します">
+            <div className="font-bold text-blue-700 text-sm">下に追加</div>
+            <div className="text-xs text-gray-400 mt-0.5">現在の行を残して下に新しい行を追加</div>
+          </button>
+          <button
+            onClick={() => { setShowApplyModal(false); setPendingApply(null) }}
+            className="w-full border rounded-lg px-4 py-2 text-sm text-gray-500 hover:bg-gray-50"
+            title="品目選択に戻ります">
+            キャンセル（品目選択に戻る）
+          </button>
         </div>
       </div>
     </div>
@@ -1177,7 +1233,7 @@ export default function HistoryPage() {
   )
 
   // ==================== ① 2画面 or 通常レイアウト ====================
-  const modals = <>{renderCopyModeModal()}{renderDraftListModal()}</>
+  const modals = <>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>
 
   if (is2Pane) {
     return (
