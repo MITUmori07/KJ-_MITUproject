@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.0
+// バージョン: V1.0.8
 // 更新: 2026/04/29
-// 変更: V1.0.0 feat: 表示行高さ拡大・タイトル・経費行を2倍
+// 変更: V1.0.8 feat: コピー編集で2画面自動切替・行高さpy-8
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.7'
+const VERSION = 'V1.0.8'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -220,7 +220,7 @@ export default function HistoryPage() {
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
       source_title: selectedEstimate.title,
     })
-    setCopying(false); setShowEstimate(true)
+    setCopying(false); setShowEstimate(true); setIs2Pane(true)
   }
 
   const loadDrafts = async () => {
@@ -1320,7 +1320,7 @@ export default function HistoryPage() {
                       <tbody>
                         {sectionItems.map((item, itemIdx) => {
                           const isHL = highlightedItems.has(item.id)
-                          const tdPy = rowHeight === 'large' ? 'py-9' : 'py-1'
+                          const tdPy = rowHeight === 'large' ? 'py-8' : 'py-1'
                           return (
                           <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
                             <td className={`${tdPy} text-center`}>{itemIdx + 1}</td>
