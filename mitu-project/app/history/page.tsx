@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.11
+// バージョン: V1.0.12
 // 更新: 2026/04/29
-// 変更: V1.0.11 feat: 解体工事の労務率デフォルト80%・その他50%
+// 変更: V1.0.12 fix: 特殊仮設工事を常に最後に表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.11'
+const VERSION = 'V1.0.12'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -622,9 +622,14 @@ export default function HistoryPage() {
   const workTypes = [...new Set(estimates.map(e => e.work_type))]
   const years = [...new Set(estimates.map(e => e.date.slice(0,4)))].sort().reverse()
 
-  const SECTION_ORDER = ['解体工事','内装工事','特殊仮設工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
+  const SECTION_ORDER = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
   const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
   const sectionNames = [...new Set(normalItems.map(i => i.work_section))].sort((a, b) => {
+    // 特殊仮設工事・特殊仮設工事の増減は常に最後
+    const aIsLast = a.startsWith('特殊仮設工事')
+    const bIsLast = b.startsWith('特殊仮設工事')
+    if (aIsLast && !bIsLast) return 1
+    if (!aIsLast && bIsLast) return -1
     const ai = SECTION_ORDER.indexOf(a), bi = SECTION_ORDER.indexOf(b)
     if (ai === -1 && bi === -1) return a.localeCompare(b)
     if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi
