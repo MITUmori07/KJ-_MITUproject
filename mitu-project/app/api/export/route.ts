@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.11
+// バージョン: V6.0.12
 // 更新: 2026/04/29
-// 変更: V6.0.11 改ページ修正(fitToPage→scale:75)・特殊仮設工事の仮設工事費行を白抜き
+// 変更: V6.0.12 列幅調整・ページ番号2開始
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -17,23 +17,21 @@ const THIN = { style: 'thin' as const }
 const BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN }
 const NUM_FMT = '#,##0'
 const DEC_FMT = '#,##0.0'
-const WHITE = 'FFFFFFFF'
 
 export async function POST(req: NextRequest) {
   const { date, building, title, staff, work_type, sections } = await req.json()
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('建築')
   ws.columns = [
-    { width: 2.33 }, { width: 2.33 }, { width: 18.78 }, { width: 22.78 },
-    { width: 9.33 }, { width: 3.78 }, { width: 10.78 }, { width: 11.78 }, { width: 11.78 }
+    { width: 3.0 }, { width: 4.4 }, { width: 24.1 }, { width: 29.3 },
+    { width: 12.0 }, { width: 4.9 }, { width: 13.7 }, { width: 15.1 }, { width: 17.7 }
   ]
 
   let r = 1
-  let pageNum = 10
+  let pageNum = 2
   let usedRows = 0
 
   const f = (size: number) => ({ name: FONT, size })
-  const fw = (size: number) => ({ name: FONT, size, color: { argb: WHITE } })
   const bd = (row: ExcelJS.Row) => { for (let i = 2; i <= 9; i++) row.getCell(i).border = BORDER }
 
   const bottomAlign = (a: string, b: string, c: string): [string,string,string] => {
@@ -66,12 +64,12 @@ export async function POST(req: NextRequest) {
     const er = ws.getRow(r); er.height = 36; bd(er); r++; usedRows++
   }
 
+  // 経費はhistory画面から渡された値をそのまま使用
   const getSectionTotal = (section: any) => section.sectionTotal || 0
 
   const writeSubtotal = (section: any, sIdx: number) => {
     const subtotal = section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)
-    const isTokkuKasetsu = section.name === '特殊仮設工事'
-    const keihi = isTokkuKasetsu ? 0 : (section.keihi || 0)
+    const keihi = section.name === '特殊仮設工事' ? 0 : (section.keihi || 0)
     const unban = section.unban || 0
     const night = section.night || 0
     const genba = section.genba || 0
@@ -83,31 +81,24 @@ export async function POST(req: NextRequest) {
     }
     while (usedRows < DATA_ROWS - SUBTOTAL_ROWS) addEmptyRow()
 
-    // [name, qty, amt, unit, hidden]
-    const items: [string, number|null, number, string, boolean][] = [
-      ['小計', null, Math.round(subtotal), '', false],
-      ['仮設工事費', 1, keihi, '式', isTokkuKasetsu],
-      ['運搬費', 1, unban, '式', false],
-      ['夜間割増費', 1, night, '式', false],
-      ['現場経費', 1, genba, '式', false],
-      [(sIdx+1) + '- ' + section.name + 'の計', null, Math.round(sectionTotal), '', false],
+    const items: [string, number|null, number, string][] = [
+      ['小計', null, Math.round(subtotal), ''],
+      ['仮設工事費', 1, keihi, '式'],
+      ['運搬費', 1, unban, '式'],
+      ['夜間割増費', 1, night, '式'],
+      ['現場経費', 1, genba, '式'],
+      [(sIdx+1) + '- ' + section.name + 'の計', null, Math.round(sectionTotal), ''],
     ]
-    items.forEach(([name, qty, amt, unit, hidden]) => {
+    items.forEach(([name, qty, amt, unit]) => {
       const sr = ws.getRow(r)
-      const font = hidden ? fw(10) : f(10)
-      sr.getCell(3).value = name; sr.getCell(3).font = font
+      sr.getCell(3).value = name; sr.getCell(3).font = f(10)
       if (qty !== null) {
-        sr.getCell(5).value = hidden ? null : qty
-        sr.getCell(5).font = font
-        if (!hidden) sr.getCell(5).numFmt = DEC_FMT
+        sr.getCell(5).value = qty; sr.getCell(5).font = f(10)
+        sr.getCell(5).numFmt = DEC_FMT
       }
-      if (unit) {
-        sr.getCell(6).value = hidden ? null : unit
-        sr.getCell(6).font = font
-      }
-      sr.getCell(8).value = hidden ? null : amt
-      sr.getCell(8).font = font
-      if (!hidden) sr.getCell(8).numFmt = NUM_FMT
+      if (unit) { sr.getCell(6).value = unit; sr.getCell(6).font = f(10) }
+      sr.getCell(8).value = amt; sr.getCell(8).font = f(10)
+      sr.getCell(8).numFmt = NUM_FMT
       sr.height = 36; bd(sr); r++; usedRows++
     })
   }
@@ -188,8 +179,9 @@ export async function POST(req: NextRequest) {
 
   // 印刷設定
   ws.pageSetup.paperSize = 9  // A4
-  ws.pageSetup.fitToPage = false
-  ws.pageSetup.scale = 75     // 列幅がA4幅に収まる固定スケール（調整可）
+  ws.pageSetup.fitToPage = true
+  ws.pageSetup.fitToWidth = 1
+  ws.pageSetup.fitToHeight = 0
 
   // 余白設定（cm → インチ換算）
   ws.pageSetup.margins = {
@@ -201,7 +193,6 @@ export async function POST(req: NextRequest) {
     footer: 0.8 / 2.54,
   }
 
-  // 手動改ページ（29行ごと）
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
     ws.getRow(br).addPageBreak()
