@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.13bb
+// バージョン: V1.0.14b
 // 更新: 2026/04/29
-// 変更: V1.0.13b fix: スマートクォート修正
+// 変更: V1.0.14 feat: 行コピー機能追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.13b'
+const VERSION = 'V1.0.14'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -485,6 +485,29 @@ export default function HistoryPage() {
       if (s.id !== sectionId) return s
       const idx = s.rows.findIndex(r => r.id === rowId)
       const rows = [...s.rows]; rows.splice(idx, 0, row); return { ...s, rows }
+    }))
+  }
+
+  const copyRowFrom = (sectionId: string, rowId: string) => {
+    const section = sections.find(s => s.id === sectionId)
+    if (!section) return
+    const input = prompt('何番の行をコピーしますか？（例: 3）')
+    if (!input) return
+    const num = parseInt(input)
+    if (isNaN(num) || num < 1 || num > section.rows.length) {
+      alert(`1〜${section.rows.length}の番号を入力してください`)
+      return
+    }
+    const sourceRow = section.rows[num - 1]
+    setSections(prev => prev.map(s => s.id !== sectionId ? s : {
+      ...s, rows: s.rows.map(r => r.id !== rowId ? r : {
+        ...r,
+        name1: sourceRow.name1, name2: sourceRow.name2, name3: sourceRow.name3,
+        spec1: sourceRow.spec1, spec2: sourceRow.spec2, spec3: sourceRow.spec3,
+        quantity: sourceRow.quantity, unit: sourceRow.unit,
+        unit_price: sourceRow.unit_price, amount: sourceRow.amount,
+        note1: sourceRow.note1, note2: sourceRow.note2, note3: sourceRow.note3,
+      })
     }))
   }
   const deleteRow = (sectionId: string, rowId: string) => {
@@ -1049,7 +1072,12 @@ export default function HistoryPage() {
                   <tbody>
                     {section.rows.map((row, rowIdx) => (
                       <tr key={row.id} className="border-t align-top">
-                        <td className="p-1 text-center align-top text-xs text-gray-400 pt-2">{rowIdx + 1}</td>
+                        <td className="p-1 text-center align-top text-xs text-gray-400 pt-2">
+                        <div>{rowIdx + 1}</div>
+                        <button onClick={() => copyRowFrom(section.id, row.id)}
+                          className="mt-1 w-7 h-6 bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 rounded text-xs"
+                          title="この行に別の行をコピー">📋</button>
+                      </td>
                         <td className="p-1 align-top">
                           <div className="flex flex-col gap-0.5 items-center pt-1">
                             {rowIdx === 0 && (
