@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.14b
+// バージョン: V1.0.15b
 // 更新: 2026/04/29
-// 変更: V1.0.14 feat: 行コピー機能追加
+// 変更: V1.0.15 feat: 現場経費上書きで合計反映・変更前後表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.14'
+const VERSION = 'V1.0.15'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -64,6 +64,7 @@ type CopyInfo = {
   building: string; staff: string; work_type: string
   draft_id: number|null; date: string; title: string
   source_estimate_id: number|null; source_title: string
+  originalTotal: number
 }
 type CopyMode = 'A' | 'B' | 'C'
 type Draft = {
@@ -125,6 +126,12 @@ export default function HistoryPage() {
 
   useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
   useEffect(() => { if (showEstimate) setIs2Pane(true) }, [showEstimate])
+  useEffect(() => {
+    if (sections.length > 0 && copyInfo && copyInfo.originalTotal === 0) {
+      const total = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
+      if (total > 0) setCopyInfo(prev => prev ? { ...prev, originalTotal: total } : prev)
+    }
+  }, [sections])
 
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
@@ -160,6 +167,7 @@ export default function HistoryPage() {
       building: '新宿FT', staff: '', work_type: 'A工事',
       draft_id: null, date: '', title: '',
       source_estimate_id: null, source_title: '',
+      originalTotal: 0,
     })
     setCopyMode(null)
     setShowEstimate(true)
@@ -220,6 +228,7 @@ export default function HistoryPage() {
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
       source_title: selectedEstimate.title,
+      originalTotal: 0,
     })
     setCopying(false); setShowEstimate(true)
   }
@@ -234,6 +243,7 @@ export default function HistoryPage() {
       building: draft.building, staff: draft.staff, work_type: draft.work_type,
       draft_id: draft.id, date: draft.date, title: draft.title,
       source_estimate_id: null, source_title: draft.source_title || '',
+      originalTotal: 0,
     })
     setCopyMode(null)
     setShowDraftListModal(false)
@@ -590,8 +600,11 @@ export default function HistoryPage() {
   const getZeinukiTotal = (section: Section) =>
     subtotal(section) + getKeihiCost(section) + getHakobiCost(section) + getNightCost(section)
   // 工事の計 = 税抜計 × 110% → 100円単位切り捨て
-  const getSectionTotal = (section: Section) =>
-    Math.floor(getZeinukiTotal(section) * 1.10 / 100) * 100
+  const getSectionTotal = (section: Section) => {
+    const zeinuki = getZeinukiTotal(section)
+    if (section.genbaOverride !== null) return zeinuki + section.genbaOverride
+    return Math.floor(zeinuki * 1.10 / 100) * 100
+  }
   // 現場経費 = 工事の計 - 税抜計（引き算・小数点誤差なし）
   const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
     getSectionTotal(section) - getZeinukiTotal(section)
@@ -1011,7 +1024,12 @@ export default function HistoryPage() {
         </div>
         {/* 3行目: 合計・ボタン */}
         <div className="px-2 py-1 flex items-center gap-2 border-t">
-          <span className="text-sm font-bold text-gray-800">合計: {grandTotal.toLocaleString()} 円</span>
+          <span className="text-sm font-bold text-gray-800">
+            {copyInfo!.originalTotal > 0
+              ? <>変更前: {copyInfo!.originalTotal.toLocaleString()} 円　→　変更後: <span className="text-blue-600">{grandTotal.toLocaleString()}</span> 円</>
+              : <>合計: {grandTotal.toLocaleString()} 円</>
+            }
+          </span>
           <div className="ml-auto flex gap-2 items-center">
             {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
             <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
