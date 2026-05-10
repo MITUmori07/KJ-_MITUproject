@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.16b
+// バージョン: V1.0.17b
 // 更新: 2026/04/29
-// 変更: V1.0.16 feat: A-Z版管理・行コピー空白行のみ
+// 変更: V1.0.17 feat: 大モード時名称・仕様・備考を全文折り返し表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.16'
+const VERSION = 'V1.0.17'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1464,23 +1464,23 @@ export default function HistoryPage() {
                           <tr key={item.id} className={`border-t align-top ${isHL ? 'bg-yellow-100' : ''}`}>
                             <td className={`${tdPy} text-center`}>{itemIdx + 1}</td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.name1 && <div className="truncate" style={{fontSize:'12px'}}>{t(item.name1,12)}</div>}
-                              {item.name2 && <div className="truncate text-gray-500" style={{fontSize:'12px'}}>{t(item.name2,12)}</div>}
-                              {item.name3 && <div className="truncate text-gray-500" style={{fontSize:'12px'}}>{t(item.name3,12)}</div>}
+                              {item.name1 && <div className={rowHeight==='large'?'break-words':'truncate'} style={{fontSize:'12px'}}>{rowHeight==='large'?item.name1:t(item.name1,12)}</div>}
+                              {item.name2 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'12px'}}>{rowHeight==='large'?item.name2:t(item.name2,12)}</div>}
+                              {item.name3 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'12px'}}>{rowHeight==='large'?item.name3:t(item.name3,12)}</div>}
                             </td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.spec1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.spec1,16)}</div>}
-                              {item.spec2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.spec2,16)}</div>}
-                              {item.spec3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.spec3,16)}</div>}
+                              {item.spec1 && <div className={rowHeight==='large'?'break-words':'truncate'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.spec1:t(item.spec1,16)}</div>}
+                              {item.spec2 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.spec2:t(item.spec2,16)}</div>}
+                              {item.spec3 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.spec3:t(item.spec3,16)}</div>}
                             </td>
                             <td className={`${tdPy} text-right`}>{item.quantity?.toFixed(1)}</td>
                             <td className={`${tdPy} text-center`}>{t(item.unit,2)}</td>
                             <td className={`${tdPy} text-right`}>{fmt(item.unit_price)}</td>
                             <td className={`${tdPy} text-right`}>{fmt(item.amount)}</td>
                             <td className={`${tdPy} overflow-hidden`}>
-                              {item.note1 && <div className="truncate" style={{fontSize:'11px'}}>{t(item.note1,7)}</div>}
-                              {item.note2 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.note2,7)}</div>}
-                              {item.note3 && <div className="truncate text-gray-500" style={{fontSize:'11px'}}>{t(item.note3,7)}</div>}
+                              {item.note1 && <div className={rowHeight==='large'?'break-words':'truncate'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.note1:t(item.note1,7)}</div>}
+                              {item.note2 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.note2:t(item.note2,7)}</div>}
+                              {item.note3 && <div className={rowHeight==='large'?'break-words text-gray-500':'truncate text-gray-500'} style={{fontSize:'11px'}}>{rowHeight==='large'?item.note3:t(item.note3,7)}</div>}
                             </td>
                             <td className={`${tdPy} text-center`}>
                               <button onClick={() => toggleHighlight(item.id)}
