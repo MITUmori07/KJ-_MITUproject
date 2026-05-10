@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.15b
+// バージョン: V1.0.16b
 // 更新: 2026/04/29
-// 変更: V1.0.15 feat: 現場経費上書きで合計反映・変更前後表示
+// 変更: V1.0.16 feat: A-Z版管理・行コピー空白行のみ
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.15'
+const VERSION = 'V1.0.16'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -21,6 +21,7 @@ const normalizeWorkType = (wt: string) =>
 type Estimate = {
   id: number; date: string; building: string
   title: string; staff: string; work_type: string
+  version: string|null; base_id: number|null
 }
 type EstimateItem = {
   id: number; estimate_id: number; work_section: string; row_order: number
@@ -65,6 +66,9 @@ type CopyInfo = {
   draft_id: number|null; date: string; title: string
   source_estimate_id: number|null; source_title: string
   originalTotal: number
+  baseId: number|null
+  currentVersion: string
+  existingVersions: string[]
 }
 type CopyMode = 'A' | 'B' | 'C'
 type Draft = {
@@ -135,7 +139,7 @@ export default function HistoryPage() {
 
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
-      .select('id,date,building,title,staff,work_type').order('date', { ascending: false })
+      .select('id,date,building,title,staff,work_type,version,base_id').order('date', { ascending: false })
     const list = data || []
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
@@ -168,6 +172,7 @@ export default function HistoryPage() {
       draft_id: null, date: '', title: '',
       source_estimate_id: null, source_title: '',
       originalTotal: 0,
+      baseId: null, currentVersion: 'A', existingVersions: [],
     })
     setCopyMode(null)
     setShowEstimate(true)
@@ -220,6 +225,18 @@ export default function HistoryPage() {
       source_title: selectedEstimate.title,
       updated_at: new Date().toISOString()
     }).select('id').single()
+    // Aモード: 既存版を取得してnext versionを設定
+    let baseId: number|null = null
+    let existingVersions: string[] = []
+    let currentVersion = 'A'
+    if (mode === 'A') {
+      const baseIdVal = selectedEstimate.base_id || selectedEstimate.id
+      const { data: vData } = await supabase.from('estimates')
+        .select('version').eq('base_id', baseIdVal).order('version')
+      existingVersions = (vData || []).map((v: { version: string|null }) => v.version || 'A').filter(Boolean)
+      currentVersion = String.fromCharCode(65 + existingVersions.length)
+      baseId = baseIdVal
+    }
     setCopyInfo({
       building: selectedEstimate.building, staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
@@ -229,6 +246,7 @@ export default function HistoryPage() {
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
       source_title: selectedEstimate.title,
       originalTotal: 0,
+      baseId, currentVersion, existingVersions,
     })
     setCopying(false); setShowEstimate(true)
   }
@@ -244,6 +262,7 @@ export default function HistoryPage() {
       draft_id: draft.id, date: draft.date, title: draft.title,
       source_estimate_id: null, source_title: draft.source_title || '',
       originalTotal: 0,
+      baseId: null, currentVersion: 'A', existingVersions: [],
     })
     setCopyMode(null)
     setShowDraftListModal(false)
@@ -316,6 +335,8 @@ export default function HistoryPage() {
       date: copyInfo.date, building: copyInfo.building,
       title: copyInfo.title, staff: copyInfo.staff,
       work_type: copyInfo.work_type,
+      version: copyInfo.currentVersion || 'A',
+      base_id: copyInfo.baseId || null,
     }).select('id').single()
     if (estError || !estData) {
       alert('確定に失敗しました（estimates）'); setConfirming(false); return
@@ -372,6 +393,10 @@ export default function HistoryPage() {
       })
     })
     await supabase.from('estimate_items').insert(expenseRows)
+    // 初回確定（base_idなし）の場合、base_id=自分のIDで更新
+    if (!copyInfo.baseId) {
+      await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
+    }
     // draftsから削除（draft_idがある場合）
     if (copyInfo.draft_id !== null) {
       await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
@@ -1006,8 +1031,29 @@ export default function HistoryPage() {
           </div>
           <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
             <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
-            <input type="text" className="border rounded px-1 py-0.5 text-xs w-full" value={copyInfo!.title}
-              placeholder="件名を入力" onChange={e => setCopyInfo({...copyInfo!, title: e.target.value})} />
+            <div className="flex items-center gap-1">
+              <input type="text"
+                className={`border rounded px-1 py-0.5 text-xs flex-1 ${copyInfo!.source_estimate_id ? 'bg-gray-100 text-gray-600' : ''}`}
+                value={copyInfo!.title} placeholder="件名を入力"
+                readOnly={!!copyInfo!.source_estimate_id}
+                onChange={e => !copyInfo!.source_estimate_id && setCopyInfo({...copyInfo!, title: e.target.value})} />
+              {copyInfo!.source_estimate_id && (
+                <div className="flex gap-0.5">
+                  {Array.from({ length: copyInfo!.existingVersions.length + 1 }, (_, i) => String.fromCharCode(65 + i)).map(v => {
+                    const isSaved = copyInfo!.existingVersions.includes(v)
+                    const isCurrent = copyInfo!.currentVersion === v
+                    return (
+                      <button key={v}
+                        onClick={() => !isSaved && setCopyInfo({...copyInfo!, currentVersion: v})}
+                        className={`w-6 h-6 rounded text-xs font-bold ${isSaved ? 'bg-blue-600 text-white' : isCurrent ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-400'}`}
+                        title={isSaved ? `版${v}：保存済み` : `版${v}として確定`}>
+                        {v}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">担当者</label>
@@ -1092,9 +1138,11 @@ export default function HistoryPage() {
                       <tr key={row.id} className="border-t align-top">
                         <td className="p-1 text-center align-top text-xs text-gray-400 pt-2">
                         <div>{rowIdx + 1}</div>
-                        <button onClick={() => copyRowFrom(section.id, row.id)}
-                          className="mt-1 w-7 h-6 bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 rounded text-xs"
-                          title="この行に別の行をコピー">📋</button>
+                        {!row.name1 && (
+                          <button onClick={() => copyRowFrom(section.id, row.id)}
+                            className="mt-1 w-7 h-6 bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 rounded text-xs"
+                            title="この行に別の行をコピー">📋</button>
+                        )}
                       </td>
                         <td className="p-1 align-top">
                           <div className="flex flex-col gap-0.5 items-center pt-1">
@@ -1356,10 +1404,30 @@ export default function HistoryPage() {
       </div>
 
       {selectedEstimate && (
-        <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap">
+        <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap items-center">
           <span>{selectedEstimate.date}</span><span>{selectedEstimate.building}</span>
           <span className="font-medium">{selectedEstimate.title}</span>
           <span>{selectedEstimate.staff}</span><span>{selectedEstimate.work_type}</span>
+          {selectedEstimate.version && (
+            <span className="bg-blue-600 text-white px-2 py-0.5 rounded font-bold">版{selectedEstimate.version}</span>
+          )}
+          {(() => {
+            const baseId = selectedEstimate.base_id || selectedEstimate.id
+            const versions = estimates.filter(e => e.base_id === baseId || e.id === baseId)
+            if (versions.length <= 1) return null
+            return (
+              <div className="flex gap-1">
+                {versions.map(e => (
+                  <button key={e.id}
+                    onClick={() => loadItems(e)}
+                    className={`w-6 h-6 rounded text-xs font-bold ${selectedEstimate.id === e.id ? 'bg-blue-600 text-white' : 'bg-white border border-blue-300 text-blue-600 hover:bg-blue-50'}`}
+                    title={`版${e.version || 'A'}: ${e.date}`}>
+                    {e.version || 'A'}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )}
 
