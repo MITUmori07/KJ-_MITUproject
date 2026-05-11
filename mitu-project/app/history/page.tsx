@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.17b
-// 更新: 2026/04/29
-// 変更: V1.0.17 feat: 大モード時名称・仕様・備考を全文折り返し表示
+// バージョン: V1.0.18
+// 更新: 2026/05/11
+// 変更: V1.0.18 fix: Aモード版管理バグ修正・確定ダイアログ文面変更
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.17'
+const VERSION = 'V1.0.18'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -232,7 +232,7 @@ export default function HistoryPage() {
     if (mode === 'A') {
       const baseIdVal = selectedEstimate.base_id || selectedEstimate.id
       const { data: vData } = await supabase.from('estimates')
-        .select('version').eq('base_id', baseIdVal).order('version')
+        .select('version').or(`base_id.eq.${baseIdVal},id.eq.${baseIdVal}`).order('version')
       existingVersions = (vData || []).map((v: { version: string|null }) => v.version || 'A').filter(Boolean)
       currentVersion = String.fromCharCode(65 + existingVersions.length)
       baseId = baseIdVal
@@ -328,7 +328,7 @@ export default function HistoryPage() {
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     if (!copyInfo.title) { alert('件名を入力してください'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
-    if (!confirm(`「${copyInfo.title}」を確定してhistoryに登録しますか？\n確定後は編集できません。`)) return
+    if (!confirm(`「${copyInfo.title}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
     setConfirming(true)
     // estimates INSERT
     const { data: estData, error: estError } = await supabase.from('estimates').insert({
