@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.22
+// バージョン: V1.0.23
 // 更新: 2026/05/11
-// 変更: V1.0.22 fix: 件名一覧を版グループ化・最新版のみ表示
+// 変更: V1.0.23 fix: ズレあり機能削除（H列優先が正しい仕様）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.22'
+const VERSION = 'V1.0.23'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -52,7 +52,6 @@ type Row = {
   nightWork: boolean; excludeHakobi: boolean
   laborRate: string; nightDeepRate: string
   source_flag: number
-  amountMismatch: boolean
 }
 type Section = {
   id: string; name: string; rows: Row[]
@@ -209,9 +208,7 @@ export default function HistoryPage() {
         note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
         showCandidates: false, source_estimate_item_id: item.id,
         nightWork: false, excludeHakobi: false, laborRate: '60', nightDeepRate: '0',
-        source_flag: 1,  // 1=Excelから取り込んだデータのコピー
-        amountMismatch: mode !== 'B' && !!item.quantity && !!item.unit_price &&
-          Math.round(item.amount || 0) !== Math.round((item.quantity || 0) * (item.unit_price || 0) * 10) / 10,
+        source_flag: 1,
       })),
       keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null,
     }))
@@ -509,8 +506,7 @@ export default function HistoryPage() {
     note1:'', note2:'', note3:'', showCandidates:false,
     source_estimate_item_id: null,
     nightWork:false, excludeHakobi:false, laborRate:'60', nightDeepRate:'0',
-    source_flag: 2,  // 2=アプリで新規作成
-    amountMismatch: false,
+    source_flag: 2,
   })
 
   const insertRowAfter = (sectionId: string, rowId: string) => {
@@ -1211,14 +1207,7 @@ export default function HistoryPage() {
                             <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
                           )}
                         </td>
-                        <td className="p-1 text-right pt-2 text-xs">
-                          <span className={row.amountMismatch ? 'text-orange-500 font-bold' : ''}>
-                            {row.amount.toLocaleString()}
-                          </span>
-                          {row.amountMismatch && (
-                            <div className="text-orange-500 text-xs mt-0.5" title="数量×単価と金額が一致していません">⚠️ ズレあり</div>
-                          )}
-                        </td>
+                        <td className="p-1 text-right pt-2 text-xs">{row.amount.toLocaleString()}</td>
                         <td className="p-1">
                           {['note1','note2','note3'].map((f,i) => (
                             <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
