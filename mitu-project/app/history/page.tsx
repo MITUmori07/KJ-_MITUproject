@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.21
+// バージョン: V1.0.22
 // 更新: 2026/05/11
-// 変更: V1.0.21 feat: 金額ズレ行のハイライト表示
+// 変更: V1.0.22 fix: 件名一覧を版グループ化・最新版のみ表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.21'
+const VERSION = 'V1.0.22'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -682,6 +682,12 @@ export default function HistoryPage() {
     if (filters.year && !e.date.startsWith(filters.year)) return false
     return true
   })
+  // 同じbase_idグループは最新版（id最大）のみ表示
+  const groupedEstimates = filteredEstimates.filter(e => {
+    const baseId = e.base_id || e.id
+    const group = filteredEstimates.filter(x => (x.base_id || x.id) === baseId)
+    return e.id === Math.max(...group.map(x => x.id))
+  })
   const staffList = [...new Set(estimates.map(e => e.staff))]
   const buildings = [...new Set(estimates.map(e => e.building))]
   const workTypes = [...new Set(estimates.map(e => e.work_type))]
@@ -1348,17 +1354,26 @@ export default function HistoryPage() {
             title="件名一覧">件名▼</button>
           {showTitleList && (
             <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-30 min-w-[300px] max-h-[60vh] overflow-y-auto">
-              {filteredEstimates.map((e, i) => (
+              {groupedEstimates.map((e, i) => {
+                const baseId = e.base_id || e.id
+                const versionCount = estimates.filter(x => (x.base_id || x.id) === baseId).length
+                return (
                 <div key={e.id}>
                   <div onClick={() => handleTitleSelect(e)}
-                    className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate?.id === e.id ? 'bg-blue-100 font-medium' : ''}`}>
-                    <div className="font-medium">{e.title}</div>
+                    className={`px-4 py-2 cursor-pointer hover:bg-blue-50 text-sm ${selectedEstimate && (selectedEstimate.base_id || selectedEstimate.id) === baseId ? 'bg-blue-100 font-medium' : ''}`}>
+                    <div className="font-medium flex items-center gap-2">
+                      {e.title}
+                      {versionCount > 1 && (
+                        <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">{versionCount}版</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500">{e.date} / {e.building} / {e.staff}</div>
                   </div>
-                  {i < filteredEstimates.length - 1 && <div className="h-2 bg-gray-50" />}
+                  {i < groupedEstimates.length - 1 && <div className="h-2 bg-gray-50" />}
                 </div>
-              ))}
-              {filteredEstimates.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">該当なし</div>}
+                )
+              })}
+              {groupedEstimates.length === 0 && <div className="px-4 py-3 text-sm text-gray-400">該当なし</div>}
             </div>
           )}
         </div>
