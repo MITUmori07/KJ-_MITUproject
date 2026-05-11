@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.23
+// バージョン: V1.0.24
 // 更新: 2026/05/11
-// 変更: V1.0.23 fix: ズレあり機能削除（H列優先が正しい仕様）
+// 変更: V1.0.24 feat: Aモード上書き確定・版ボタン長押し不要マーク
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.23'
+const VERSION = 'V1.0.24'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -22,6 +22,7 @@ type Estimate = {
   id: number; date: string; building: string
   title: string; staff: string; work_type: string
   version: string|null; base_id: number|null
+  is_archived: boolean|null
 }
 type EstimateItem = {
   id: number; estimate_id: number; work_section: string; row_order: number
@@ -69,6 +70,7 @@ type CopyInfo = {
   baseId: number|null
   currentVersion: string
   existingVersions: string[]
+  overwriteId: number|null
 }
 type CopyMode = 'A' | 'B' | 'C'
 type Draft = {
@@ -91,6 +93,8 @@ export default function HistoryPage() {
   const [showEstimate, setShowEstimate] = useState(false)
   const [copyInfo, setCopyInfo] = useState<CopyInfo|null>(null)
   const copyItemsRef = useRef<EstimateItem[]>([])
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggered = useRef(false)
   const [sections, setSections] = useState<Section[]>([])
   const [customSection, setCustomSection] = useState('')
   const [showSectionInput, setShowSectionInput] = useState(false)
@@ -126,6 +130,18 @@ export default function HistoryPage() {
       else next.add(id)
       return next
     })
+  }
+
+  const startLongPress = (e: Estimate) => {
+    longPressTriggered.current = false
+    longPressTimer.current = setTimeout(async () => {
+      longPressTriggered.current = true
+      await supabase.from('estimates').update({ is_archived: !e.is_archived }).eq('id', e.id)
+      await loadEstimates()
+    }, 600)
+  }
+  const cancelLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
   }
 
   useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
@@ -173,6 +189,7 @@ export default function HistoryPage() {
       source_estimate_id: null, source_title: '',
       originalTotal: 0,
       baseId: null, currentVersion: 'A', existingVersions: [],
+      overwriteId: null,
     })
     setCopyMode(null)
     setShowEstimate(true)
@@ -247,6 +264,7 @@ export default function HistoryPage() {
       source_title: selectedEstimate.title,
       originalTotal: 0,
       baseId, currentVersion, existingVersions,
+      overwriteId: selectedEstimate.id,
     })
     setCopying(false); setShowEstimate(true)
   }
@@ -263,6 +281,7 @@ export default function HistoryPage() {
       source_estimate_id: null, source_title: draft.source_title || '',
       originalTotal: 0,
       baseId: null, currentVersion: 'A', existingVersions: [],
+      overwriteId: null,
     })
     setCopyMode(null)
     setShowDraftListModal(false)
@@ -330,6 +349,59 @@ export default function HistoryPage() {
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!confirm(`「${copyInfo.title}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
     setConfirming(true)
+
+    // Aモード: 上書きか新版か選択
+    const doOverwrite = copyMode === 'A' && copyInfo.overwriteId !== null &&
+      window.confirm('確定方法を選んでください\n\nOK → 現在の版を直接上書き（元データは消えます）\nキャンセル → ' + copyInfo.currentVersion + '版として新規保存')
+
+    if (doOverwrite && copyInfo.overwriteId) {
+      // 上書きパス: estimatesをUPDATE、estimate_itemsを全DELETE→INSERT
+      const { error: upError } = await supabase.from('estimates').update({
+        date: copyInfo.date, building: copyInfo.building,
+        title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type,
+      }).eq('id', copyInfo.overwriteId)
+      if (upError) { alert('上書きに失敗しました'); setConfirming(false); return }
+      await supabase.from('estimate_items').delete().eq('estimate_id', copyInfo.overwriteId)
+      const overwriteRows: object[] = []
+      sections.forEach(section => {
+        section.rows.forEach((row, idx) => {
+          overwriteRows.push({
+            estimate_id: copyInfo.overwriteId, work_section: section.name, row_order: idx + 1,
+            name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
+            spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
+            quantity: parseFloat(row.quantity) || 0, unit: row.unit,
+            unit_price: parseFloat(row.unit_price) || 0, amount: row.amount,
+            note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
+            source_flag: row.source_flag,
+          })
+        })
+      })
+      await supabase.from('estimate_items').insert(overwriteRows)
+      const expRows: object[] = []
+      sections.forEach(section => {
+        const ws = `経費_${section.name}`
+        const sub = subtotal(section)
+        ;[
+          { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
+          { name1: '仮設工事費', amount: section.name === '特殊仮設工事' ? 0 : getKeihiCost(section), quantity: 1, unit: '式' },
+          { name1: '運搬費', amount: getHakobiCost(section), quantity: 1, unit: '式' },
+          { name1: '深夜作業割増', amount: getNightCost(section), quantity: 1, unit: '式' },
+          { name1: '現場経費', amount: getGenbaCost(section), quantity: 1, unit: '式' },
+        ].forEach((e, idx) => {
+          expRows.push({ estimate_id: copyInfo.overwriteId, work_section: ws, row_order: idx + 1,
+            name1: e.name1, quantity: e.quantity, unit: e.unit, unit_price: 0, amount: e.amount })
+        })
+      })
+      await supabase.from('estimate_items').insert(expRows)
+      if (copyInfo.draft_id !== null) await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
+      setConfirming(false)
+      if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport()
+      setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
+      await loadEstimates()
+      return
+    }
+
+    // 通常パス（新版として保存）
     // estimates INSERT
     const { data: estData, error: estError } = await supabase.from('estimates').insert({
       date: copyInfo.date, building: copyInfo.building,
@@ -1442,9 +1514,20 @@ export default function HistoryPage() {
               <div className="flex gap-1">
                 {versions.map(e => (
                   <button key={e.id}
-                    onClick={() => loadItems(e)}
-                    className={`w-6 h-6 rounded text-xs font-bold ${selectedEstimate.id === e.id ? 'bg-blue-600 text-white' : 'bg-white border border-blue-300 text-blue-600 hover:bg-blue-50'}`}
-                    title={`版${e.version || 'A'}: ${e.date}`}>
+                    onClick={() => { if (!longPressTriggered.current) loadItems(e) }}
+                    onMouseDown={() => startLongPress(e)}
+                    onMouseUp={cancelLongPress}
+                    onTouchStart={(ev) => { ev.preventDefault(); startLongPress(e) }}
+                    onTouchEnd={cancelLongPress}
+                    onTouchMove={cancelLongPress}
+                    className={`w-6 h-6 rounded text-xs font-bold select-none ${
+                      e.is_archived
+                        ? 'bg-gray-200 text-gray-400 line-through'
+                        : selectedEstimate.id === e.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-blue-300 text-blue-600 hover:bg-blue-50'
+                    }`}
+                    title={e.is_archived ? `不要（長押しで復活）版${e.version || 'A'}: ${e.date}` : `版${e.version || 'A'}: ${e.date}（長押しで不要マーク）`}>
                     {e.version || 'A'}
                   </button>
                 ))}
