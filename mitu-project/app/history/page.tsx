@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.18
+// バージョン: V1.0.21
 // 更新: 2026/05/11
-// 変更: V1.0.18 fix: Aモード版管理バグ修正・確定ダイアログ文面変更
+// 変更: V1.0.21 feat: 金額ズレ行のハイライト表示
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.18'
+const VERSION = 'V1.0.21'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -52,6 +52,7 @@ type Row = {
   nightWork: boolean; excludeHakobi: boolean
   laborRate: string; nightDeepRate: string
   source_flag: number
+  amountMismatch: boolean
 }
 type Section = {
   id: string; name: string; rows: Row[]
@@ -209,6 +210,8 @@ export default function HistoryPage() {
         showCandidates: false, source_estimate_item_id: item.id,
         nightWork: false, excludeHakobi: false, laborRate: '60', nightDeepRate: '0',
         source_flag: 1,  // 1=Excelから取り込んだデータのコピー
+        amountMismatch: mode !== 'B' && !!item.quantity && !!item.unit_price &&
+          Math.round(item.amount || 0) !== Math.round((item.quantity || 0) * (item.unit_price || 0) * 10) / 10,
       })),
       keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null,
     }))
@@ -402,10 +405,13 @@ export default function HistoryPage() {
       await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
     }
     setConfirming(false)
-    alert(`「${copyInfo.title}」を確定しました！`)
-    // リセットしてhistory画面へ
+    // ① 先にExcel確認（copyInfo・sectionsがまだ生きている）
+    if (confirm('確定しました！\nExcel出力しますか？')) {
+      await handleExport()
+    }
+    // ② その後リセットしてhistory画面へ
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
-    loadEstimates()
+    await loadEstimates()
   }
 
   const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
@@ -504,6 +510,7 @@ export default function HistoryPage() {
     source_estimate_item_id: null,
     nightWork:false, excludeHakobi:false, laborRate:'60', nightDeepRate:'0',
     source_flag: 2,  // 2=アプリで新規作成
+    amountMismatch: false,
   })
 
   const insertRowAfter = (sectionId: string, rowId: string) => {
@@ -647,7 +654,6 @@ export default function HistoryPage() {
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     if (!copyInfo.title) { alert('件名を入力してください'); return }
-    await saveDraft()
     // 経費計算値をsectionsに含めてAPIに渡す
     const sectionsWithExpenses = sections.map(s => ({
       ...s,
@@ -1199,7 +1205,14 @@ export default function HistoryPage() {
                             <div className="text-gray-300 text-xs text-right mt-1">#{row.source_estimate_item_id}</div>
                           )}
                         </td>
-                        <td className="p-1 text-right pt-2 text-xs">{row.amount.toLocaleString()}</td>
+                        <td className="p-1 text-right pt-2 text-xs">
+                          <span className={row.amountMismatch ? 'text-orange-500 font-bold' : ''}>
+                            {row.amount.toLocaleString()}
+                          </span>
+                          {row.amountMismatch && (
+                            <div className="text-orange-500 text-xs mt-0.5" title="数量×単価と金額が一致していません">⚠️ ズレあり</div>
+                          )}
+                        </td>
                         <td className="p-1">
                           {['note1','note2','note3'].map((f,i) => (
                             <input key={f} className={`w-full border rounded px-2 py-1 ${i<2?'mb-1':''}`}
@@ -1402,6 +1415,12 @@ export default function HistoryPage() {
           className="ml-auto bg-orange-500 text-white px-3 py-0.5 rounded font-bold text-xs hover:bg-orange-600 whitespace-nowrap"
           title="フィルターリセット">←</button>
       </div>
+      {selectedEstimate && (
+        <div className="bg-gray-800 text-white px-4 py-1 text-xs flex items-center justify-between">
+          <span className="text-gray-300">建築工事合計</span>
+          <span className="font-bold text-base text-yellow-300">{historyGrandTotal.toLocaleString()} 円</span>
+        </div>
+      )}
 
       {selectedEstimate && (
         <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap items-center">
