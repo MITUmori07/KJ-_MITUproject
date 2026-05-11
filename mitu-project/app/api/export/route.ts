@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.12
-// 更新: 2026/04/29
-// 変更: V6.0.12 列幅調整・ページ番号2開始
+// バージョン: V6.0.13
+// 更新: 2026/05/11
+// 変更: V6.0.13 fix: 行金額をamountに統一（quantity×unit_price廃止）
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -168,7 +168,9 @@ export async function POST(req: NextRequest) {
       const unitPrice = parseFloat(row.unit_price)||null
       dr.getCell(7).value = unitPrice; dr.getCell(7).font = f(10)
       if (unitPrice !== null) dr.getCell(7).numFmt = NUM_FMT
-      dr.getCell(8).value = Math.round((parseFloat(row.quantity)||0)*(parseFloat(row.unit_price)||0)); dr.getCell(8).font = f(10)
+      // ★ 修正: quantity×unit_priceではなくrow.amountを使用
+      dr.getCell(8).value = Math.round(row.amount || 0)
+      dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
       dr.height = 36; bd(dr); r++; usedRows++
