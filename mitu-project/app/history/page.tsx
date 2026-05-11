@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.24
+// バージョン: V1.0.24b
 // 更新: 2026/05/11
-// 変更: V1.0.24 feat: Aモード上書き確定・版ボタン長押し不要マーク
+// 変更: V1.0.24b fix: selectにis_archived追加（型エラー修正）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.24'
+const VERSION = 'V1.0.24b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -155,7 +155,7 @@ export default function HistoryPage() {
 
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
-      .select('id,date,building,title,staff,work_type,version,base_id').order('date', { ascending: false })
+      .select('id,date,building,title,staff,work_type,version,base_id,is_archived').order('date', { ascending: false })
     const list = data || []
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
