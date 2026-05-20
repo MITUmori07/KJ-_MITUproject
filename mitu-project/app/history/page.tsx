@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.25
+// バージョン: V1.0.26
 // 更新: 2026/05/11
-// 変更: V1.0.25 feat: 上書きボタン分離・確定は常に新版
+// 変更: V1.0.26 fix: 件名inputをdefaultValue+ref方式に変更（ダブリバグ修正）
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.25'
+const VERSION = 'V1.0.26'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -95,6 +95,7 @@ export default function HistoryPage() {
   const copyItemsRef = useRef<EstimateItem[]>([])
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressTriggered = useRef(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [customSection, setCustomSection] = useState('')
   const [showSectionInput, setShowSectionInput] = useState(false)
@@ -314,26 +315,25 @@ export default function HistoryPage() {
   const saveDraft = async () => {
     if (!copyInfo) return
     setSaving(true)
+    const currentTitle = titleInputRef.current?.value || copyInfo.title
     const sectionsToSave = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false })) }))
-    const file_key = copyInfo.date && copyInfo.title
-      ? `${copyInfo.date}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}`
+    const file_key = copyInfo.date && currentTitle
+      ? `${copyInfo.date}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}`
       : `copy_未入力_${copyInfo.draft_id || Date.now()}`
     if (copyInfo.draft_id === null) {
-      // draft_idがない場合（新規作成）は初回INSERT
       const { data } = await supabase.from('drafts').insert({
         file_key, date: copyInfo.date, building: copyInfo.building,
-        title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
+        title: currentTitle || 'コピー未入力', staff: copyInfo.staff,
         work_type: copyInfo.work_type, sections: sectionsToSave,
         source_title: copyInfo.source_title || null,
         updated_at: new Date().toISOString()
       }).select('id').single()
-      if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id } : prev)
+      if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id, title: currentTitle } : prev)
     } else {
-      // draft_idがある場合は常にUPSERT
       await supabase.from('drafts').upsert({
         id: copyInfo.draft_id, file_key,
         date: copyInfo.date, building: copyInfo.building,
-        title: copyInfo.title || 'コピー未入力', staff: copyInfo.staff,
+        title: currentTitle || 'コピー未入力', staff: copyInfo.staff,
         work_type: copyInfo.work_type, sections: sectionsToSave,
         source_title: copyInfo.source_title || null,
         updated_at: new Date().toISOString()
@@ -345,16 +345,17 @@ export default function HistoryPage() {
   const handleConfirm = async () => {
     if (!copyInfo) return
     if (!copyInfo.date) { alert('日付を入力してください'); return }
-    if (!copyInfo.title) { alert('件名を入力してください'); return }
+    const currentTitle = titleInputRef.current?.value || copyInfo.title
+    if (!currentTitle) { alert('件名を入力してください'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
-    if (!confirm(`「${copyInfo.title}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
+    if (!confirm(`「${currentTitle}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
     setConfirming(true)
 
     // 通常パス（新版として保存）
     // estimates INSERT
     const { data: estData, error: estError } = await supabase.from('estimates').insert({
       date: copyInfo.date, building: copyInfo.building,
-      title: copyInfo.title, staff: copyInfo.staff,
+      title: currentTitle, staff: copyInfo.staff,
       work_type: copyInfo.work_type,
       version: copyInfo.currentVersion || 'A',
       base_id: copyInfo.baseId || null,
@@ -435,12 +436,13 @@ export default function HistoryPage() {
   const handleOverwrite = async () => {
     if (!copyInfo || !copyInfo.overwriteId) return
     if (!copyInfo.date) { alert('日付を入力してください'); return }
-    if (!copyInfo.title) { alert('件名を入力してください'); return }
-    if (!confirm(`「${copyInfo.title}」の現在の版を上書きします。\n元のデータは消えます。よろしいですか？`)) return
+    const currentTitle = titleInputRef.current?.value || copyInfo.title
+    if (!currentTitle) { alert('件名を入力してください'); return }
+    if (!confirm(`「${currentTitle}」の現在の版を上書きします。\n元のデータは消えます。よろしいですか？`)) return
     setConfirming(true)
     const { error: upError } = await supabase.from('estimates').update({
       date: copyInfo.date, building: copyInfo.building,
-      title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type,
+      title: currentTitle, staff: copyInfo.staff, work_type: copyInfo.work_type,
     }).eq('id', copyInfo.overwriteId)
     if (upError) { alert('上書きに失敗しました'); setConfirming(false); return }
     await supabase.from('estimate_items').delete().eq('estimate_id', copyInfo.overwriteId)
@@ -718,7 +720,8 @@ export default function HistoryPage() {
     if (copying) { alert('データ読み込み中です'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
-    if (!copyInfo.title) { alert('件名を入力してください'); return }
+    const currentTitle = titleInputRef.current?.value || copyInfo.title
+    if (!currentTitle) { alert('件名を入力してください'); return }
     // 経費計算値をsectionsに含めてAPIに渡す
     const sectionsWithExpenses = sections.map(s => ({
       ...s,
@@ -730,13 +733,13 @@ export default function HistoryPage() {
     }))
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: copyInfo.date, building: copyInfo.building, title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type, sections: sectionsWithExpenses })
+      body: JSON.stringify({ date: copyInfo.date, building: copyInfo.building, title: currentTitle, staff: copyInfo.staff, work_type: copyInfo.work_type, sections: sectionsWithExpenses })
     })
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${copyInfo.title}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
+    a.download = `${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
     a.click()
   }
 
@@ -1110,10 +1113,11 @@ export default function HistoryPage() {
             <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
             <div className="flex items-center gap-1">
               <input type="text"
+                ref={titleInputRef}
+                key={`title-${copyInfo!.source_estimate_id || 'new'}-${copyInfo!.draft_id || ''}`}
                 className={`border rounded px-1 py-0.5 text-xs flex-1 ${copyInfo!.source_estimate_id ? 'bg-gray-100 text-gray-600' : ''}`}
-                value={copyInfo!.title} placeholder="件名を入力"
-                readOnly={!!copyInfo!.source_estimate_id}
-                onChange={e => !copyInfo!.source_estimate_id && setCopyInfo({...copyInfo!, title: e.target.value})} />
+                defaultValue={copyInfo!.title} placeholder="件名を入力"
+                readOnly={!!copyInfo!.source_estimate_id} />
               {copyInfo!.source_estimate_id && (
                 <div className="flex gap-0.5">
                   {Array.from({ length: copyInfo!.existingVersions.length + 1 }, (_, i) => String.fromCharCode(65 + i)).map(v => {
