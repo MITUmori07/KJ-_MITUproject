@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.24b
+// バージョン: V1.0.25
 // 更新: 2026/05/11
-// 変更: V1.0.24b fix: selectにis_archived追加（型エラー修正）
+// 変更: V1.0.25 feat: 上書きボタン分離・確定は常に新版
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.24b'
+const VERSION = 'V1.0.25'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -350,57 +350,6 @@ export default function HistoryPage() {
     if (!confirm(`「${copyInfo.title}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
     setConfirming(true)
 
-    // Aモード: 上書きか新版か選択
-    const doOverwrite = copyMode === 'A' && copyInfo.overwriteId !== null &&
-      window.confirm('確定方法を選んでください\n\nOK → 現在の版を直接上書き（元データは消えます）\nキャンセル → ' + copyInfo.currentVersion + '版として新規保存')
-
-    if (doOverwrite && copyInfo.overwriteId) {
-      // 上書きパス: estimatesをUPDATE、estimate_itemsを全DELETE→INSERT
-      const { error: upError } = await supabase.from('estimates').update({
-        date: copyInfo.date, building: copyInfo.building,
-        title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type,
-      }).eq('id', copyInfo.overwriteId)
-      if (upError) { alert('上書きに失敗しました'); setConfirming(false); return }
-      await supabase.from('estimate_items').delete().eq('estimate_id', copyInfo.overwriteId)
-      const overwriteRows: object[] = []
-      sections.forEach(section => {
-        section.rows.forEach((row, idx) => {
-          overwriteRows.push({
-            estimate_id: copyInfo.overwriteId, work_section: section.name, row_order: idx + 1,
-            name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
-            spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
-            quantity: parseFloat(row.quantity) || 0, unit: row.unit,
-            unit_price: parseFloat(row.unit_price) || 0, amount: row.amount,
-            note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
-            source_flag: row.source_flag,
-          })
-        })
-      })
-      await supabase.from('estimate_items').insert(overwriteRows)
-      const expRows: object[] = []
-      sections.forEach(section => {
-        const ws = `経費_${section.name}`
-        const sub = subtotal(section)
-        ;[
-          { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
-          { name1: '仮設工事費', amount: section.name === '特殊仮設工事' ? 0 : getKeihiCost(section), quantity: 1, unit: '式' },
-          { name1: '運搬費', amount: getHakobiCost(section), quantity: 1, unit: '式' },
-          { name1: '深夜作業割増', amount: getNightCost(section), quantity: 1, unit: '式' },
-          { name1: '現場経費', amount: getGenbaCost(section), quantity: 1, unit: '式' },
-        ].forEach((e, idx) => {
-          expRows.push({ estimate_id: copyInfo.overwriteId, work_section: ws, row_order: idx + 1,
-            name1: e.name1, quantity: e.quantity, unit: e.unit, unit_price: 0, amount: e.amount })
-        })
-      })
-      await supabase.from('estimate_items').insert(expRows)
-      if (copyInfo.draft_id !== null) await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
-      setConfirming(false)
-      if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport()
-      setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
-      await loadEstimates()
-      return
-    }
-
     // 通常パス（新版として保存）
     // estimates INSERT
     const { data: estData, error: estError } = await supabase.from('estimates').insert({
@@ -483,7 +432,55 @@ export default function HistoryPage() {
     await loadEstimates()
   }
 
-  const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
+  const handleOverwrite = async () => {
+    if (!copyInfo || !copyInfo.overwriteId) return
+    if (!copyInfo.date) { alert('日付を入力してください'); return }
+    if (!copyInfo.title) { alert('件名を入力してください'); return }
+    if (!confirm(`「${copyInfo.title}」の現在の版を上書きします。\n元のデータは消えます。よろしいですか？`)) return
+    setConfirming(true)
+    const { error: upError } = await supabase.from('estimates').update({
+      date: copyInfo.date, building: copyInfo.building,
+      title: copyInfo.title, staff: copyInfo.staff, work_type: copyInfo.work_type,
+    }).eq('id', copyInfo.overwriteId)
+    if (upError) { alert('上書きに失敗しました'); setConfirming(false); return }
+    await supabase.from('estimate_items').delete().eq('estimate_id', copyInfo.overwriteId)
+    const overwriteRows: object[] = []
+    sections.forEach(section => {
+      section.rows.forEach((row, idx) => {
+        overwriteRows.push({
+          estimate_id: copyInfo.overwriteId, work_section: section.name, row_order: idx + 1,
+          name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
+          spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
+          quantity: parseFloat(row.quantity) || 0, unit: row.unit,
+          unit_price: parseFloat(row.unit_price) || 0, amount: row.amount,
+          note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
+          source_flag: row.source_flag,
+        })
+      })
+    })
+    await supabase.from('estimate_items').insert(overwriteRows)
+    const expRows: object[] = []
+    sections.forEach(section => {
+      const ws = `経費_${section.name}`
+      const sub = subtotal(section)
+      ;[
+        { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
+        { name1: '仮設工事費', amount: section.name === '特殊仮設工事' ? 0 : getKeihiCost(section), quantity: 1, unit: '式' },
+        { name1: '運搬費', amount: getHakobiCost(section), quantity: 1, unit: '式' },
+        { name1: '深夜作業割増', amount: getNightCost(section), quantity: 1, unit: '式' },
+        { name1: '現場経費', amount: getGenbaCost(section), quantity: 1, unit: '式' },
+      ].forEach((e, idx) => {
+        expRows.push({ estimate_id: copyInfo.overwriteId, work_section: ws, row_order: idx + 1,
+          name1: e.name1, quantity: e.quantity, unit: e.unit, unit_price: 0, amount: e.amount })
+      })
+    })
+    await supabase.from('estimate_items').insert(expRows)
+    if (copyInfo.draft_id !== null) await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
+    setConfirming(false)
+    if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport()
+    setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
+    await loadEstimates()
+  }
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupTab('history')
     const section = sections.find(s => s.id === sectionId)
@@ -1181,6 +1178,12 @@ export default function HistoryPage() {
               className="bg-red-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50"
               title="見積を完成させて一覧に登録します。日付・件名が必要。">
               {confirming ? '確定中...' : '確定'}</button>
+            {copyMode === 'A' && copyInfo?.overwriteId && (
+              <button onClick={handleOverwrite} disabled={confirming}
+                className="bg-gray-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-gray-700 disabled:opacity-50"
+                title="現在の版を直接上書きします（元データは消えます）">
+                上書き</button>
+            )}
             <button onClick={handleExport}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
               title="Excel出力（日付・件名必須）">Excel出力</button>
