@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.13
-// 更新: 2026/05/11
-// 変更: V6.0.13 fix: 行金額をamountに統一（quantity×unit_price廃止）
+// バージョン: V6.0.14
+// 更新: 2026/05/27
+// 変更: V6.0.14 feat: 全ページヘッダーセンタリング・中間行高さ50に変更
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -56,12 +56,15 @@ export async function POST(req: NextRequest) {
     h.getCell(5).value = '数　量'; h.getCell(6).value = '単位'
     h.getCell(7).value = '単　価'; h.getCell(8).value = '金　額'
     h.getCell(9).value = '備　考'; h.height = 26.1
-    ;[3,5,6,7,8,9].forEach(i => { h.getCell(i).font = f(10) })
+    ;[3,5,6,7,8,9].forEach(i => {
+      h.getCell(i).font = f(10)
+      h.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
+    })
     bd(h); r++
   }
 
   const addEmptyRow = () => {
-    const er = ws.getRow(r); er.height = 36; bd(er); r++; usedRows++
+    const er = ws.getRow(r); er.height = 50; bd(er); r++; usedRows++
   }
 
   // 経費はhistory画面から渡された値をそのまま使用
@@ -99,7 +102,7 @@ export async function POST(req: NextRequest) {
       if (unit) { sr.getCell(6).value = unit; sr.getCell(6).font = f(10) }
       sr.getCell(8).value = amt; sr.getCell(8).font = f(10)
       sr.getCell(8).numFmt = NUM_FMT
-      sr.height = 36; bd(sr); r++; usedRows++
+      sr.height = 37.5; bd(sr); r++; usedRows++
     })
   }
 
@@ -110,16 +113,19 @@ export async function POST(req: NextRequest) {
   h2.getCell(5).value = '数　量'; h2.getCell(6).value = '単位'
   h2.getCell(7).value = '単　価'; h2.getCell(8).value = '金　額'
   h2.getCell(9).value = '備　考'; h2.height = 26.1
-  ;[3,5,6,7,8,9].forEach(i => { h2.getCell(i).font = f(10) })
+  ;[3,5,6,7,8,9].forEach(i => {
+    h2.getCell(i).font = f(10)
+    h2.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
+  })
   bd(h2); r++
   const tRow = ws.getRow(r)
   tRow.getCell(2).value = 'Ⅱ'; tRow.getCell(3).value = '建築工事'
   ;[2,3].forEach(i => tRow.getCell(i).font = f(10))
-  tRow.height = 36; bd(tRow); r++
+  tRow.height = 37.5; bd(tRow); r++
   const nRow = ws.getRow(r)
   nRow.getCell(3).value = '（内訳）'; nRow.getCell(3).font = f(10)
-  nRow.height = 36; bd(nRow); r++
-  const e1 = ws.getRow(r); e1.height = 36; bd(e1); r++
+  nRow.height = 37.5; bd(nRow); r++
+  const e1 = ws.getRow(r); e1.height = 37.5; bd(e1); r++
   sections.forEach((section: any, idx: number) => {
     const sr = ws.getRow(r)
     sr.getCell(2).value = idx + 1; sr.getCell(3).value = section.name
@@ -128,16 +134,16 @@ export async function POST(req: NextRequest) {
     sr.getCell(8).value = Math.round(getSectionTotal(section))
     sr.getCell(8).numFmt = NUM_FMT
     ;[2,3,5,6,8].forEach(i => sr.getCell(i).font = f(10))
-    sr.height = 36; bd(sr); r++
+    sr.height = 37.5; bd(sr); r++
   })
-  while (r < 13) { const er = ws.getRow(r); er.height = 36; bd(er); r++ }
+  while (r < 13) { const er = ws.getRow(r); er.height = 37.5; bd(er); r++ }
   const gtRow = ws.getRow(r)
   gtRow.getCell(4).value = 'Ⅱ- 建築工事の計'
   gtRow.getCell(8).value = Math.round(sections.reduce((s: number, sec: any) => s + getSectionTotal(sec), 0))
   gtRow.getCell(8).numFmt = NUM_FMT
   ;[4,8].forEach(i => gtRow.getCell(i).font = f(10))
-  gtRow.height = 36; bd(gtRow); r++
-  while (r <= 27) { const er = ws.getRow(r); er.height = 36; bd(er); r++ }
+  gtRow.height = 37.5; bd(gtRow); r++
+  while (r <= 27) { const er = ws.getRow(r); er.height = 37.5; bd(er); r++ }
   addPageNum()
 
   // === ページ2以降: 各工事区分明細 ===
@@ -146,7 +152,7 @@ export async function POST(req: NextRequest) {
     const sh = ws.getRow(r)
     sh.getCell(2).value = sIdx + 1; sh.getCell(3).value = section.name
     ;[2,3].forEach(i => sh.getCell(i).font = f(10))
-    sh.height = 36; bd(sh); r++; usedRows++
+    sh.height = 37.5; bd(sh); r++; usedRows++
     section.rows.forEach((row: any) => {
       if (usedRows >= DATA_ROWS - SUBTOTAL_ROWS - 1) {
         while (usedRows < DATA_ROWS) addEmptyRow()
@@ -173,7 +179,7 @@ export async function POST(req: NextRequest) {
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
-      dr.height = 36; bd(dr); r++; usedRows++
+      dr.height = 37.5; bd(dr); r++; usedRows++
     })
     writeSubtotal(section, sIdx)
     addPageNum()
