@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.28g
+// バージョン: V1.0.28h
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -1673,7 +1673,7 @@ export default function HistoryPage() {
   // ==================== ① 2画面 or 通常レイアウト ====================
   const modals = (<>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>)
 
-  const renderMain = (): JSX.Element => {
+  const renderMain = () => {
     if (!is2Pane && showEstimate && copyInfo) return (<>{renderEstimate()}{modals}</>)
     if (!is2Pane) return (<>{renderHistory()}{modals}</>)
     return (
