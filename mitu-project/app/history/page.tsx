@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.28f
+// バージョン: V1.0.28g
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -496,6 +496,8 @@ export default function HistoryPage() {
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
+
+  const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupTab('history')
     const section = sections.find(s => s.id === sectionId)
