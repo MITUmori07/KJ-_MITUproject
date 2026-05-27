@@ -1,14 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.14
+// バージョン: V6.0.16
 // 更新: 2026/05/27
-// 変更: V6.0.14 feat: 全ページヘッダーセンタリング・中間行高さ50に変更
+// 変更: V6.0.16 feat: J/K/L/M列追加・特殊仮設仮設費スキップ・VERSION表示
 // ============================================================
 
 export const runtime = 'nodejs'
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
+import { VERSION } from '@/lib/version'
 
 const FONT = 'BIZ UDゴシック'
 const DATA_ROWS = 25
@@ -43,8 +44,12 @@ export async function POST(req: NextRequest) {
   }
 
   const addPageNum = () => {
-    const p = ws.getRow(r); p.getCell(9).value = 'P.  ' + pageNum
-    p.getCell(9).font = f(10); p.height = 15.95; r++
+    const p = ws.getRow(r)
+    p.getCell(9).value = 'P.  ' + pageNum
+    p.getCell(9).font = f(10)
+    p.getCell(10).value = VERSION
+    p.getCell(10).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+    p.height = 15.95; r++
     ws.getRow(r).height = 15.95; r++
     pageNum++; usedRows = 0
   }
@@ -70,29 +75,31 @@ export async function POST(req: NextRequest) {
   // 経費はhistory画面から渡された値をそのまま使用
   const getSectionTotal = (section: any) => section.sectionTotal || 0
 
-  const writeSubtotal = (section: any, sIdx: number) => {
+  const writeSubtotal = (section: any, sIdx: number, firstDataRow: number|null, lastDataRow: number|null) => {
     const subtotal = section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)
-    const keihi = section.name === '特殊仮設工事' ? 0 : (section.keihi || 0)
+    const isTokkyu = section.name.startsWith('特殊仮設工事')
+    const keihi = isTokkyu ? 0 : (section.keihi || 0)
     const unban = section.unban || 0
     const night = section.night || 0
     const genba = section.genba || 0
     const sectionTotal = section.sectionTotal || 0
+
+    const items: [string, number|null, number, string, string][] = [
+      ['小計', null, Math.round(subtotal), '', 'subtotal'],
+      ...(!isTokkyu ? [['仮設工事費', 1, keihi, '式', 'keihi'] as [string, number|null, number, string, string]] : []),
+      ['運搬費', 1, unban, '式', 'unban'],
+      ['夜間割増費', 1, night, '式', 'night'],
+      ['現場経費', 1, genba, '式', 'genba'],
+      [(sIdx+1) + '- ' + section.name + 'の計', null, Math.round(sectionTotal), '', 'total'],
+    ]
+    const actualRows = items.length
     const remaining = DATA_ROWS - usedRows
-    if (remaining < SUBTOTAL_ROWS) {
-      while (usedRows < DATA_ROWS) addEmptyRow()
+    if (remaining < actualRows) {
       addPageNum(); addHeader()
     }
-    while (usedRows < DATA_ROWS - SUBTOTAL_ROWS) addEmptyRow()
 
-    const items: [string, number|null, number, string][] = [
-      ['小計', null, Math.round(subtotal), ''],
-      ['仮設工事費', 1, keihi, '式'],
-      ['運搬費', 1, unban, '式'],
-      ['夜間割増費', 1, night, '式'],
-      ['現場経費', 1, genba, '式'],
-      [(sIdx+1) + '- ' + section.name + 'の計', null, Math.round(sectionTotal), ''],
-    ]
-    items.forEach(([name, qty, amt, unit]) => {
+    let subtotalRow: number|null = null
+    items.forEach(([name, qty, amt, unit, key]) => {
       const sr = ws.getRow(r)
       sr.getCell(3).value = name; sr.getCell(3).font = f(10)
       if (qty !== null) {
@@ -102,6 +109,37 @@ export async function POST(req: NextRequest) {
       if (unit) { sr.getCell(6).value = unit; sr.getCell(6).font = f(10) }
       sr.getCell(8).value = amt; sr.getCell(8).font = f(10)
       sr.getCell(8).numFmt = NUM_FMT
+
+      // M列: 検算式
+      if (key === 'subtotal') {
+        subtotalRow = r
+        if (firstDataRow && lastDataRow) {
+          sr.getCell(13).value = { formula: `SUM(M${firstDataRow}:M${lastDataRow})` }
+          sr.getCell(13).numFmt = NUM_FMT
+          sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        }
+      } else if (key === 'keihi' && subtotalRow) {
+        sr.getCell(13).value = { formula: `FLOOR(M${subtotalRow}*0.07,10)` }
+        sr.getCell(13).numFmt = NUM_FMT
+        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        sr.getCell(12).value = '7%'
+        sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+      } else if (key === 'unban' && subtotalRow) {
+        sr.getCell(13).value = { formula: `FLOOR(M${subtotalRow}*0.02,10)` }
+        sr.getCell(13).numFmt = NUM_FMT
+        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        sr.getCell(12).value = '2%'
+        sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+      } else if (key === 'night') {
+        sr.getCell(13).value = amt
+        sr.getCell(13).numFmt = NUM_FMT
+        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+      } else if (key === 'total') {
+        sr.getCell(13).value = amt
+        sr.getCell(13).numFmt = NUM_FMT
+        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+      }
+
       sr.height = 37.5; bd(sr); r++; usedRows++
     })
   }
@@ -153,11 +191,17 @@ export async function POST(req: NextRequest) {
     sh.getCell(2).value = sIdx + 1; sh.getCell(3).value = section.name
     ;[2,3].forEach(i => sh.getCell(i).font = f(10))
     sh.height = 37.5; bd(sh); r++; usedRows++
+
+    let firstDataRow: number|null = null
+    let lastDataRow: number|null = null
+
     section.rows.forEach((row: any) => {
-      if (usedRows >= DATA_ROWS - SUBTOTAL_ROWS - 1) {
-        while (usedRows < DATA_ROWS) addEmptyRow()
+      if (usedRows >= DATA_ROWS) {
         addPageNum(); addHeader()
       }
+      if (firstDataRow === null) firstDataRow = r
+      lastDataRow = r
+
       const [n1,n2,n3] = bottomAlign(row.name1||'', row.name2||'', row.name3||'')
       const [s1,s2,s3] = bottomAlign(row.spec1||'', row.spec2||'', row.spec3||'')
       const [o1,o2,o3] = bottomAlign(row.note1||'', row.note2||'', row.note3||'')
@@ -174,14 +218,31 @@ export async function POST(req: NextRequest) {
       const unitPrice = parseFloat(row.unit_price)||null
       dr.getCell(7).value = unitPrice; dr.getCell(7).font = f(10)
       if (unitPrice !== null) dr.getCell(7).numFmt = NUM_FMT
-      // ★ 修正: quantity×unit_priceではなくrow.amountを使用
       dr.getCell(8).value = Math.round(row.amount || 0)
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
+      // 印刷範囲外（J〜M列）
+      if (row.excludeHakobi) {
+        dr.getCell(10).value = '搬'
+        dr.getCell(10).font = { name: FONT, size: 8, color: { argb: 'FFCC6600' } }
+      }
+      if (row.nightWork) {
+        dr.getCell(11).value = '夜'
+        dr.getCell(11).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+      }
+      const lr = parseFloat(row.laborRate)
+      if (!isNaN(lr) && lr > 0) {
+        dr.getCell(12).value = lr / 100
+        dr.getCell(12).numFmt = '0%'
+        dr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+      }
+      dr.getCell(13).value = Math.round(row.amount || 0)
+      dr.getCell(13).numFmt = NUM_FMT
+      dr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
       dr.height = 37.5; bd(dr); r++; usedRows++
     })
-    writeSubtotal(section, sIdx)
+    writeSubtotal(section, sIdx, firstDataRow, lastDataRow)
     addPageNum()
   })
 
