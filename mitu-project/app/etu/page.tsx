@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/etu/
 // ファイル名: page.tsx
-// バージョン: V1.0.3
-// 更新: 2026/05/11
-// 変更: V1.0.3 feat: 件名一覧グループ化・版ボタン・不要マーク
+// バージョン: V1.0.4
+// 更新: 2026/05/27
+// 変更: V1.0.4 feat: Excelファイル名先頭に版名を追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.3'
+const VERSION = 'V1.0.4'
 
 type Estimate = {
   id: number; date: string; building: string
@@ -174,7 +174,10 @@ export default function EtuPage() {
     })
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
-    window.open(url)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}.xlsx`
+    a.click()
   }
 
   const colWidths = { no:'3%', name:'25%', spec:'22%', qty:'6%', unit:'4%', price:'10%', amount:'11%', note:'15%', hl:'4%' }
