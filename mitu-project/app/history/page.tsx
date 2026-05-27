@@ -1665,7 +1665,6 @@ export default function HistoryPage() {
       </div>
     </main>
   )
-  }
 
   // ==================== ① 2画面 or 通常レイアウト ====================
   const modals = <>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>
