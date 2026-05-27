@@ -1429,7 +1429,8 @@ export default function HistoryPage() {
   )
 
   // ==================== history画面 JSX ====================
-  const renderHistory = () => (
+  const renderHistory = () => {
+    return (
     <main className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm px-2 py-1 flex items-center gap-1 flex-wrap">
         <span className="text-xs text-gray-400 font-mono mr-1">{VERSION}</span>
@@ -1664,7 +1665,8 @@ export default function HistoryPage() {
         )}
       </div>
     </main>
-  )
+    )
+  }
 
   // ==================== ① 2画面 or 通常レイアウト ====================
   const modals = <>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>
