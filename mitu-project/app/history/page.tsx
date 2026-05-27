@@ -1,15 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.26
+// バージョン: V1.0.26b
 // 更新: 2026/05/11
-// 変更: V1.0.26 fix: 件名inputをdefaultValue+ref方式に変更（ダブリバグ修正）
+// 変更: V1.0.26b fix: renderHistory閉じ括弧抜け修正
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-const VERSION = 'V1.0.26'
+const VERSION = 'V1.0.26b'
 const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
@@ -1648,6 +1648,7 @@ export default function HistoryPage() {
       </div>
     </main>
   )
+}
 
   // ==================== ① 2画面 or 通常レイアウト ====================
   const modals = <>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>
