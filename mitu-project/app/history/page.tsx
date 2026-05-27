@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.28c
+// バージョン: V1.0.28d
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -1669,21 +1669,27 @@ export default function HistoryPage() {
   }
 
   // ==================== ① 2画面 or 通常レイアウト ====================
-  const modals = <>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>
+  const modals = (
+    <>
+      {renderCopyModeModal()}
+      {renderDraftListModal()}
+      {renderApplyModal()}
+    </>
+  )
+
+  const paneRightContent = showEstimate && copyInfo ? renderEstimate() : (
+    <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
+      <span className="text-4xl">→</span>
+      <span>左の「→編集」ボタンを押すと</span>
+      <span>ここにコピー編集が表示されます</span>
+    </div>
+  )
 
   if (is2Pane) return (
     <>
       <div className="flex h-screen overflow-hidden">
         <div className="w-1/2 overflow-y-auto border-r">{renderHistory()}</div>
-        <div className="w-1/2 overflow-y-auto">
-          {showEstimate && copyInfo ? renderEstimate() : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm gap-2">
-              <span className="text-4xl">→</span>
-              <span>左の「→編集」ボタンを押すと</span>
-              <span>ここにコピー編集が表示されます</span>
-            </div>
-          )}
-        </div>
+        <div className="w-1/2 overflow-y-auto">{paneRightContent}</div>
       </div>
       {modals}
     </>
