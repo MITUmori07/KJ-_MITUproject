@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.16
+// バージョン: V6.0.17
 // 更新: 2026/05/27
-// 変更: V6.0.16 feat: J/K/L/M列追加・特殊仮設仮設費スキップ・VERSION表示
+// 変更: V6.0.17 fix: データ行25行フル使用・小計下固定復元（V6.0.15修正）
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -95,8 +95,10 @@ export async function POST(req: NextRequest) {
     const actualRows = items.length
     const remaining = DATA_ROWS - usedRows
     if (remaining < actualRows) {
+      while (usedRows < DATA_ROWS) addEmptyRow()
       addPageNum(); addHeader()
     }
+    while (usedRows < DATA_ROWS - actualRows) addEmptyRow()
 
     let subtotalRow: number|null = null
     items.forEach(([name, qty, amt, unit, key]) => {
