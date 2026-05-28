@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.17
+// バージョン: V6.0.18
 // 更新: 2026/05/27
-// 変更: V6.0.17 fix: データ行25行フル使用・小計下固定復元（V6.0.15修正）
+// 変更: V6.0.18 feat: 搬除外・夜間赤字・N/O/P/Q/R列・H列夜間割増数式
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   // 経費はhistory画面から渡された値をそのまま使用
   const getSectionTotal = (section: any) => section.sectionTotal || 0
 
-  const writeSubtotal = (section: any, sIdx: number, firstDataRow: number|null, lastDataRow: number|null) => {
+  const writeSubtotal = (section: any, sIdx: number, firstDataRow: number|null, lastDataRow: number|null, nightNRows: number[], firstNightRow: any, hakobiExcludedTotal: number) => {
     const subtotal = section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)
     const isTokkyu = section.name.startsWith('特殊仮設工事')
     const keihi = isTokkyu ? 0 : (section.keihi || 0)
@@ -132,10 +132,24 @@ export async function POST(req: NextRequest) {
         sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         sr.getCell(12).value = '2%'
         sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-      } else if (key === 'night') {
-        sr.getCell(13).value = amt
-        sr.getCell(13).numFmt = NUM_FMT
-        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+      } else if (key === 'unban' && hakobiExcludedTotal > 0) {
+        sr.getCell(14).value = `運搬除外計  ${Math.round(hakobiExcludedTotal).toLocaleString()}`
+        sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF666666' } }
+      } else if (key === 'night' && nightNRows.length > 0) {
+        const nightRow = r
+        const sumFormula = nightNRows.length === 1
+          ? `N${nightNRows[0]}`
+          : `SUM(${nightNRows.map(rn => `N${rn}`).join(',')})`
+        const lr = firstNightRow ? (parseFloat(firstNightRow.laborRate) || 60) / 100 : 0.6
+        const dp = firstNightRow ? (parseFloat(firstNightRow.nightDeepRate) || 0) / 100 : 0
+        const RED = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+        sr.getCell(14).value = { formula: sumFormula }; sr.getCell(14).numFmt = NUM_FMT; sr.getCell(14).font = RED
+        sr.getCell(15).value = 0.5;  sr.getCell(15).numFmt = '0%'; sr.getCell(15).font = RED
+        sr.getCell(16).value = lr;   sr.getCell(16).numFmt = '0%'; sr.getCell(16).font = RED
+        sr.getCell(17).value = 0.2;  sr.getCell(17).numFmt = '0%'; sr.getCell(17).font = RED
+        sr.getCell(18).value = dp;   sr.getCell(18).numFmt = '0%'; sr.getCell(18).font = RED
+        sr.getCell(8).value = { formula: `N${nightRow}*O${nightRow}+N${nightRow}*Q${nightRow}*R${nightRow}` }
+        sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = { name: FONT, size: 10, color: { argb: 'FFCC0000' } }
       } else if (key === 'total') {
         sr.getCell(13).value = amt
         sr.getCell(13).numFmt = NUM_FMT
@@ -196,6 +210,9 @@ export async function POST(req: NextRequest) {
 
     let firstDataRow: number|null = null
     let lastDataRow: number|null = null
+    let nightNRows: number[] = []
+    let firstNightRow: any = null
+    let hakobiExcludedTotal = 0
 
     section.rows.forEach((row: any) => {
       if (usedRows >= DATA_ROWS) {
@@ -224,27 +241,40 @@ export async function POST(req: NextRequest) {
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
-      // 印刷範囲外（J〜M列）
+      // 印刷範囲外（J〜N列）
       if (row.excludeHakobi) {
-        dr.getCell(10).value = '搬'
+        dr.getCell(10).value = '搬除外'
         dr.getCell(10).font = { name: FONT, size: 8, color: { argb: 'FFCC6600' } }
+        hakobiExcludedTotal += row.amount || 0
       }
       if (row.nightWork) {
         dr.getCell(11).value = '夜'
-        dr.getCell(11).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
-      }
-      const lr = parseFloat(row.laborRate)
-      if (!isNaN(lr) && lr > 0) {
+        dr.getCell(11).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+        const lr = parseFloat(row.laborRate) || 60
         dr.getCell(12).value = lr / 100
         dr.getCell(12).numFmt = '0%'
-        dr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+        dr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+        const nightBase = Math.round((row.amount || 0) * lr / 100)
+        dr.getCell(14).value = nightBase
+        dr.getCell(14).numFmt = NUM_FMT
+        dr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+        nightNRows.push(r)
+        if (!firstNightRow) firstNightRow = row
+        // 夜間行は全セル赤字
+        const sizes: {[k:number]:number} = {3:10,4:9,5:10,6:10,7:10,8:10,9:9}
+        for (let col = 3; col <= 9; col++) {
+          dr.getCell(col).font = { name: FONT, size: sizes[col] || 10, color: { argb: 'FFCC0000' } }
+        }
+      } else {
+        if (row.excludeHakobi) {
+          // 搬除外のみ（夜間なし）
+        } else {
+          // 通常行はL列非表示
+        }
       }
-      dr.getCell(13).value = Math.round(row.amount || 0)
-      dr.getCell(13).numFmt = NUM_FMT
-      dr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
       dr.height = 37.5; bd(dr); r++; usedRows++
     })
-    writeSubtotal(section, sIdx, firstDataRow, lastDataRow)
+    writeSubtotal(section, sIdx, firstDataRow, lastDataRow, nightNRows, firstNightRow, hakobiExcludedTotal)
     addPageNum()
   })
 
