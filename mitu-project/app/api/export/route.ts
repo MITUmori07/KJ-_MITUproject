@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.1.0
+// バージョン: V6.1.2
 // 更新: 2026/05/27
-// 変更: V6.1.0 feat: 仮設/運搬H列数式・色変更・深夜率%削除・600dpi
+// 変更: V6.1.2 feat: N列=H×L数式・P列deepRate・現場経費/総計H数式
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
     while (usedRows < DATA_ROWS - actualRows) addEmptyRow()
 
     let subtotalRow: number|null = null
+    let nightSubtotalRow: number|null = null
     items.forEach(([name, qty, amt, unit, key]) => {
       const sr = ws.getRow(r)
       sr.getCell(3).value = name; sr.getCell(3).font = f(10)
@@ -141,25 +142,24 @@ export async function POST(req: NextRequest) {
         sr.getCell(15).value = '夜間割増'; sr.getCell(15).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
         sr.getCell(16).value = '深夜率';   sr.getCell(16).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
       } else if (key === 'night' && nightNRows.length > 0) {
-        const nightRow = r
+        nightSubtotalRow = r
         const sumFormula = nightNRows.length === 1
           ? `N${nightNRows[0]}`
           : `SUM(${nightNRows.map(rn => `N${rn}`).join(',')})`
-        const lr = firstNightRow ? (parseFloat(firstNightRow.laborRate) || 60) / 100 : 0.6
-        const dp = firstNightRow ? (parseFloat(firstNightRow.nightDeepRate) || 0) / 100 : 0
+        const dp = (section.nightDeepRate || 0) / 100
         const RED = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
         sr.getCell(14).value = { formula: sumFormula }; sr.getCell(14).numFmt = NUM_FMT; sr.getCell(14).font = RED
         sr.getCell(15).value = 0.5;  sr.getCell(15).numFmt = '0%'; sr.getCell(15).font = RED
-        sr.getCell(16).value = lr;   sr.getCell(16).numFmt = '0%'; sr.getCell(16).font = RED
-        if (dp > 0) {
-          sr.getCell(17).value = dp; sr.getCell(17).numFmt = '0'; sr.getCell(17).font = RED
-        }
-        sr.getCell(8).value = { formula: `N${nightRow}*(O${nightRow}+Q${nightRow})` }
+        sr.getCell(16).value = dp;   sr.getCell(16).numFmt = '0%'; sr.getCell(16).font = RED
+        sr.getCell(8).value = { formula: `N${r}*(O${r}+P${r})` }
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = { name: FONT, size: 10, color: { argb: 'FFCC0000' } }
-      } else if (key === 'total') {
-        sr.getCell(13).value = amt
-        sr.getCell(13).numFmt = NUM_FMT
-        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+      } else if (key === 'genba' && subtotalRow && nightSubtotalRow) {
+        const totalRow = r + 1
+        sr.getCell(8).value = { formula: `H${totalRow}-SUM(H${subtotalRow}:H${nightSubtotalRow})` }
+        sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = f(10)
+      } else if (key === 'total' && subtotalRow && nightSubtotalRow) {
+        sr.getCell(8).value = { formula: `FLOOR(SUM(H${subtotalRow}:H${nightSubtotalRow})*1.1,1000)` }
+        sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = f(10)
       }
 
       sr.height = 37.5; bd(sr); r++; usedRows++
@@ -267,7 +267,7 @@ export async function POST(req: NextRequest) {
         dr.getCell(12).numFmt = '0%'
         dr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
         const nightBase = Math.round((row.amount || 0) * lr / 100)
-        dr.getCell(14).value = nightBase
+        dr.getCell(14).value = { formula: `H${r}*L${r}` }
         dr.getCell(14).numFmt = NUM_FMT
         dr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
         nightNRows.push(r)
