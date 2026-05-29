@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.19
+// バージョン: V6.0.18d
 // 更新: 2026/05/27
-// 変更: V6.0.19 fix: H小計SUM式・仮設H参照・夜間H式修正・R廃止
+// 変更: V6.0.18d feat: ヘッダーL/M/N列ラベル・運搬費O/P列ラベル追加
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
       h.getCell(i).font = f(10)
       h.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
     })
+    h.getCell(12).value = '労務比率'; h.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+    h.getCell(13).value = '搬入除外計'; h.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+    h.getCell(14).value = '計×労務比率'; h.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
     bd(h); r++
   }
 
@@ -137,6 +140,8 @@ export async function POST(req: NextRequest) {
           sr.getCell(14).value = `運搬除外計  ${Math.round(hakobiExcludedTotal).toLocaleString()}`
           sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF666666' } }
         }
+        sr.getCell(15).value = '夜間割増'; sr.getCell(15).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+        sr.getCell(16).value = '深夜率';   sr.getCell(16).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
       } else if (key === 'night' && nightNRows.length > 0) {
         const nightRow = r
         const sumFormula = nightNRows.length === 1
@@ -175,6 +180,9 @@ export async function POST(req: NextRequest) {
     h2.getCell(i).font = f(10)
     h2.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
   })
+  h2.getCell(12).value = '労務比率'; h2.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+  h2.getCell(13).value = '搬入除外計'; h2.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+  h2.getCell(14).value = '計×労務比率'; h2.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
   bd(h2); r++
   const tRow = ws.getRow(r)
   tRow.getCell(2).value = 'Ⅱ'; tRow.getCell(3).value = '建築工事'
