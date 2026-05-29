@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.28h
+// バージョン: V1.0.29
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -62,6 +62,7 @@ type Section = {
   unbanOverride: number|null   // 運搬費（手動上書き可）
   nightOverride: number|null   // 夜間割増費（手動上書き可）
   genbaOverride: number|null   // 現場経費（手動上書き可）
+  nightDeepRate: number        // 深夜割増率 0/5/10/.../40
 }
 type Filters = { staff: string; building: string; workType: string; year: string }
 type CopyInfo = {
@@ -185,7 +186,7 @@ export default function HistoryPage() {
 
   // 新規作成
   const handleNewEstimate = () => {
-    setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null }])
+    setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null, nightDeepRate: 0 }])
     setCopyInfo({
       building: '新宿FT', staff: '', work_type: 'A工事',
       draft_id: null, date: '', title: '',
@@ -216,25 +217,30 @@ export default function HistoryPage() {
     const normalItems = freshItems.filter((i: EstimateItem) => !i.work_section.startsWith('経費_'))
     const rawNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))] as string[]
     const sortedNames = sortSectionNames(rawNames)
-    const newSections = sortedNames.map((name: string) => ({
-      id: Math.random().toString(36).slice(2), name,
-      rows: normalItems.filter((i: EstimateItem) => i.work_section === name).map((item: EstimateItem) => ({
-        id: Math.random().toString(36).slice(2),
-        name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
-        spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
-        quantity: mode === 'B' ? '' : item.quantity?.toFixed(1) || '',
-        unit: item.unit||'', unit_price: String(item.unit_price ?? ''),
-        amount: mode === 'B' ? 0 : item.amount,
-        note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
-        showCandidates: false, source_estimate_item_id: item.id,
-        nightWork: item.night_work || false,
-        excludeHakobi: item.exclude_hakobi || false,
-        laborRate: String(item.labor_rate ?? 60),
-        nightDeepRate: String(item.night_deep_rate ?? 0),
-        source_flag: 1,
-      })),
-      keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null,
-    }))
+    const newSections = sortedNames.map((name: string) => {
+      const expWs = `経費_${name}`
+      const nightExp = expItems.find((i: EstimateItem) => i.work_section === expWs && i.name1 === '深夜作業割増')
+      return {
+        id: Math.random().toString(36).slice(2), name,
+        rows: normalItems.filter((i: EstimateItem) => i.work_section === name).map((item: EstimateItem) => ({
+          id: Math.random().toString(36).slice(2),
+          name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
+          spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
+          quantity: mode === 'B' ? '' : item.quantity?.toFixed(1) || '',
+          unit: item.unit||'', unit_price: String(item.unit_price ?? ''),
+          amount: mode === 'B' ? 0 : item.amount,
+          note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
+          showCandidates: false, source_estimate_item_id: item.id,
+          nightWork: item.night_work || false,
+          excludeHakobi: item.exclude_hakobi || false,
+          laborRate: String(item.labor_rate ?? 60),
+          nightDeepRate: String(item.night_deep_rate ?? 0),
+          source_flag: 1,
+        })),
+        keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null,
+        nightDeepRate: nightExp ? (nightExp.night_deep_rate ?? 0) : 0,
+      }
+    })
     setSections(newSections); copyItemsRef.current = freshItems
     const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
     const { data: draftData } = await supabase.from('drafts').insert({
@@ -409,7 +415,7 @@ export default function HistoryPage() {
         { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
         { name1: '仮設工事費', amount: keihiVal, quantity: 1, unit: '式' },
         { name1: '運搬費', amount: unbanVal, quantity: 1, unit: '式' },
-        { name1: '深夜作業割増', amount: nightVal, quantity: 1, unit: '式' },
+        { name1: '深夜作業割増', amount: nightVal, quantity: 1, unit: '式', night_deep_rate: section.nightDeepRate },
         { name1: '現場経費', amount: genbaVal, quantity: 1, unit: '式' },
       ]
       expItems.forEach((e, idx) => {
@@ -420,6 +426,7 @@ export default function HistoryPage() {
           name1: e.name1, quantity: e.quantity,
           unit: e.unit, unit_price: 0,
           amount: e.amount,
+          night_deep_rate: (e as any).night_deep_rate ?? 0,
         })
       })
     })
@@ -686,7 +693,7 @@ export default function HistoryPage() {
   const addSection = (name: string) => {
     if (!name.trim()) return
     setSections(prev => {
-      const newS = { id: Math.random().toString(36).slice(2), name, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null }
+      const newS = { id: Math.random().toString(36).slice(2), name, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null, nightDeepRate: 0 }
       const withoutLast = prev.filter(s => s.name !== LAST_SECTION)
       const last = prev.find(s => s.name === LAST_SECTION)
       return last ? [...withoutLast, newS, last] : [...withoutLast, newS]
@@ -697,10 +704,10 @@ export default function HistoryPage() {
   const subtotal = (s: Section) => s.rows.reduce((sum, r) => sum + r.amount, 0)
   const getNightCost = (section: Section) => {
     if (section.nightOverride !== null) return section.nightOverride
+    const deep = section.nightDeepRate / 100
     return Math.floor(section.rows.filter(r => r.nightWork).reduce((sum, r) => {
       const labor = (parseFloat(r.laborRate)||60) / 100
-      const deep = (parseFloat(r.nightDeepRate)||0) / 100
-      return sum + (r.amount * labor * 0.5) + (r.amount * labor * deep)
+      return sum + (r.amount * labor * (0.5 + deep))
     }, 0) / 10) * 10
   }
   const getHakobiCost = (section: Section) => section.unbanOverride !== null ? section.unbanOverride :
@@ -717,7 +724,7 @@ export default function HistoryPage() {
   const getSectionTotal = (section: Section) => {
     const zeinuki = getZeinukiTotal(section)
     if (section.genbaOverride !== null) return zeinuki + section.genbaOverride
-    return Math.floor(zeinuki * 1.10 / 100) * 100
+    return Math.floor(zeinuki * 1.10 / 1000) * 1000
   }
   // 現場経費 = 工事の計 - 税抜計（引き算・小数点誤差なし）
   const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
@@ -745,6 +752,7 @@ export default function HistoryPage() {
       night: getNightCost(s),
       genba: getGenbaCost(s),
       sectionTotal: getSectionTotal(s),
+      nightDeepRate: s.nightDeepRate,
     }))
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1360,17 +1368,19 @@ export default function HistoryPage() {
                   const zeinuki = sub + keihi + unban + night
                   const genba = getGenbaCost(section)
                   const total = getSectionTotal(section)
+                  const hasNightRows = section.rows.some(r => r.nightWork)
                   return [
                     { label: '小計', autoValue: sub, field: null },
                     { label: '仮設工事費（7%）', autoValue: keihi, field: 'keihiOverride' as const },
                     { label: '運搬費（2%）', autoValue: Math.floor(section.rows.filter(r => !r.excludeHakobi).reduce((s, r) => s + r.amount, 0) * 0.02 / 10) * 10, field: 'unbanOverride' as const },
-                    { label: '夜間割増費', autoValue: Math.floor(section.rows.filter(r => r.nightWork).reduce((s, r) => { const l=(parseFloat(r.laborRate)||60)/100; const d=(parseFloat(r.nightDeepRate)||0)/100; return s+(r.amount*l*0.5)+(r.amount*l*d) }, 0) / 10) * 10, field: 'nightOverride' as const },
-                    { label: '現場経費', autoValue: Math.floor(zeinuki * 1.10 / 100) * 100 - zeinuki, field: 'genbaOverride' as const },
+                    { label: '夜間割増費', autoValue: night, field: 'nightOverride' as const },
+                    { label: '現場経費', autoValue: Math.floor(zeinuki * 1.10 / 1000) * 1000 - zeinuki, field: 'genbaOverride' as const },
                     { label: `${section.name}の計`, autoValue: total, field: null },
                   ].map(({ label, autoValue, field }, idx) => {
                     const overrideVal = field ? section[field] : null
                     return (
-                      <div key={idx} className={`flex items-center gap-2 px-3 py-3 border-t text-xs ${idx === 5 ? 'bg-gray-200 font-bold text-sm' : 'text-gray-600'}`}>
+                      <div key={idx} className={`flex flex-col px-3 py-2 border-t text-xs ${idx === 5 ? 'bg-gray-200 font-bold text-sm' : 'text-gray-600'}`}>
+                        <div className="flex items-center gap-2">
                         <span className="w-40 shrink-0">{label}</span>
                         <span className="w-24 text-right text-gray-500">{(autoValue||0).toLocaleString()}</span>
                         {field ? (
@@ -1392,6 +1402,21 @@ export default function HistoryPage() {
                           </div>
                         ) : (
                           <span className="ml-auto font-bold">{(autoValue||0).toLocaleString()} 円</span>
+                        )}
+                        </div>
+                        {idx === 3 && hasNightRows && (
+                          <div className="flex items-center gap-2 mt-1 ml-0 text-xs text-blue-600">
+                            <span className="w-24 shrink-0">深夜割増率</span>
+                            <select
+                              value={section.nightDeepRate}
+                              onChange={e => setSections(prev => prev.map(s => s.id === section.id ? { ...s, nightDeepRate: Number(e.target.value) } : s))}
+                              className="border rounded px-1 py-0.5 text-xs w-20"
+                            >
+                              {[0,5,10,15,20,25,30,35,40].map(v => (
+                                <option key={v} value={v}>{v}%</option>
+                              ))}
+                            </select>
+                          </div>
                         )}
                       </div>
                     )
