@@ -1,16 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.1.9
-// 更新: 2026/04/28
-// 変更: V1.1.9 名称空行に直前行の名称を自動引き継ぎ
+// バージョン: V1.2.0
+// 更新: 2026/05/27
+// 変更: V1.2.0 feat: buildingsテーブル動的取得・新規ビル名自動追加
 // ============================================================
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
-
-const VERSION = 'V1.1.9'
+import { VERSION } from '@/lib/version'
 
 // スキップ行の判定
 const isSectionTotal = (d: string) =>
@@ -77,12 +76,34 @@ export default function ImportPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [doneMsg, setDoneMsg] = useState('')
   const [sectionMatches, setSectionMatches] = useState<SectionMatch[]>([])
+  const [buildingList, setBuildingList] = useState<string[]>(['新宿FT', '新宿ESS'])
+
+  useEffect(() => { loadBuildings() }, [])
+
+  const loadBuildings = async () => {
+    const { data } = await supabase.from('buildings').select('name').order('sort_order')
+    if (data && data.length > 0) setBuildingList(data.map((b: {name: string}) => b.name))
+  }
+
+  const ensureBuilding = async (name: string) => {
+    if (!name) return
+    const { data } = await supabase.from('buildings').select('id').eq('name', name)
+    if (data && data.length === 0) {
+      const { data: maxData } = await supabase.from('buildings').select('sort_order').order('sort_order', { ascending: false }).limit(1)
+      const nextOrder = maxData && maxData.length > 0 ? ((maxData[0] as any).sort_order || 0) + 1 : 1
+      await supabase.from('buildings').insert({ name, sort_order: nextOrder })
+      await loadBuildings()
+    }
+  }
 
   const handleFile = async (file: File) => {
     setErrorMsg('')
     setFileName(file.name)
     const info = parseFileName(file.name)
     setHeaderInfo(info)
+
+    // 新しいビル名があれば自動追加
+    await ensureBuilding(info.building)
 
     try {
       const buf = await file.arrayBuffer()
@@ -172,8 +193,6 @@ export default function ImportPage() {
           continue
         }
 
-        // 明細行
-        // name1が空でもspec/数量/単価があれば取り込む（名称引き継ぎ後処理で補完）
         if (c || d || e !== null || g !== null) {
           const [n1, n2, n3] = split3(c)
           const [s1, s2, s3] = split3(d)
@@ -183,7 +202,6 @@ export default function ImportPage() {
           const hVal = h !== null && h !== undefined && !isNaN(Number(h)) ? Number(h) : null
           const amount = hVal !== null ? Math.round(hVal) : (qty !== null && price !== null ? Math.round(qty * price) : 0)
 
-          // spec/数量/単価のどれかがあれば取り込む
           const hasContent = d || e !== null || g !== null
           if (!hasContent) continue
 
@@ -209,58 +227,31 @@ export default function ImportPage() {
         }
       }
 
-      // ==================== 名称引き継ぎ後処理 ====================
-      // name1が空かつspec1/数量/単価のいずれかに値がある行は
-      // 直前行のname1/name2/name3を引き継ぐ
+      // 名称引き継ぎ後処理
       for (let i = 1; i < parsed.length; i++) {
         const row = parsed[i]
-        if (
-          !row.name1 &&
-          (row.spec1 || row.quantity || row.unit_price) &&
-          !row.work_section.startsWith('経費_')
-        ) {
-          // 直前の同じwork_sectionの行を探す
+        if (!row.name1 && (row.spec1 || row.quantity || row.unit_price) && !row.work_section.startsWith('経費_')) {
           let prevIdx = i - 1
-          while (prevIdx >= 0 && parsed[prevIdx].work_section !== row.work_section) {
-            prevIdx--
-          }
+          while (prevIdx >= 0 && parsed[prevIdx].work_section !== row.work_section) prevIdx--
           if (prevIdx >= 0) {
-            parsed[i] = {
-              ...row,
-              name1: parsed[prevIdx].name1,
-              name2: parsed[prevIdx].name2,
-              name3: parsed[prevIdx].name3,
-            }
+            parsed[i] = { ...row, name1: parsed[prevIdx].name1, name2: parsed[prevIdx].name2, name3: parsed[prevIdx].name3 }
           }
         }
       }
 
       if (parsed.length === 0) {
         const bVals = rows.slice(0, 40).map((r: any, i: number) => `行${i+1}:B=${JSON.stringify(r['B'])}C=${JSON.stringify(r['C'])}`).join(' / ')
-        const debugInfo = `行数:${rows.length} page2Started:${page2Started} B列サンプル: ${bVals}`
-        setErrorMsg('明細データが見つかりませんでした。' + debugInfo)
+        setErrorMsg('明細データが見つかりませんでした。行数:' + rows.length + ' page2Started:' + page2Started + ' ' + bVals)
         return
       }
 
-      // マッチング計算
-      const sections = [...new Set(
-        parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
-      )]
+      const sections = [...new Set(parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section))]
       const matches: SectionMatch[] = sections.map(name => {
         const excelTotal = excelTotals[name] ?? null
-        const detailTotal = parsed
-          .filter(r => r.work_section === name)
-          .reduce((sum, r) => sum + r.amount, 0)
-        const expenseTotal = parsed
-          .filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計')
-          .reduce((sum, r) => sum + r.amount, 0)
+        const detailTotal = parsed.filter(r => r.work_section === name).reduce((sum, r) => sum + r.amount, 0)
+        const expenseTotal = parsed.filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計').reduce((sum, r) => sum + r.amount, 0)
         const calcTotal = detailTotal + expenseTotal
-        return {
-          name,
-          excelTotal: excelTotal ?? 0,
-          calcTotal,
-          matched: excelTotal !== null && Math.round(excelTotal) === Math.round(calcTotal),
-        }
+        return { name, excelTotal: excelTotal ?? 0, calcTotal, matched: excelTotal !== null && Math.round(excelTotal) === Math.round(calcTotal) }
       })
       setSectionMatches(matches)
       setPreviewRows(parsed)
@@ -287,31 +278,20 @@ export default function ImportPage() {
         updated.warning = !updated.work_section || !updated.quantity || !updated.unit_price
         return updated
       })
-      const sections = [...new Set(
-        next.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
-      )]
+      const sections = [...new Set(next.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section))]
       const matches = sections.map(name => {
         const excelTotal = sectionMatches.find(m => m.name === name)?.excelTotal ?? 0
-        const detailTotal = next
-          .filter(r => r.work_section === name)
-          .reduce((sum, r) => sum + r.amount, 0)
-        const expenseTotal = next
-          .filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計')
-          .reduce((sum, r) => sum + r.amount, 0)
+        const detailTotal = next.filter(r => r.work_section === name).reduce((sum, r) => sum + r.amount, 0)
+        const expenseTotal = next.filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計').reduce((sum, r) => sum + r.amount, 0)
         const calcTotal = detailTotal + expenseTotal
-        return {
-          name, excelTotal, calcTotal,
-          matched: Math.round(excelTotal) === Math.round(calcTotal),
-        }
+        return { name, excelTotal, calcTotal, matched: Math.round(excelTotal) === Math.round(calcTotal) }
       })
       setSectionMatches(matches)
       return next
     })
   }
 
-  const deleteRow = (idx: number) => {
-    setPreviewRows(prev => prev.filter((_, i) => i !== idx))
-  }
+  const deleteRow = (idx: number) => setPreviewRows(prev => prev.filter((_, i) => i !== idx))
 
   const handleImport = async () => {
     setErrorMsg('')
@@ -320,8 +300,10 @@ export default function ImportPage() {
     if (previewRows.length === 0) { setErrorMsg('明細データがありません'); return }
 
     setImporting(true)
-
     try {
+      // ビル名が変更されている場合も自動追加
+      await ensureBuilding(headerInfo.building)
+
       const { data: estData, error: estError } = await supabase
         .from('estimates').insert({
           date: headerInfo.date, building: headerInfo.building,
@@ -351,7 +333,6 @@ export default function ImportPage() {
       }))
 
       const { error: itemsError } = await supabase.from('estimate_items').insert(itemsToInsert)
-
       if (itemsError) {
         await supabase.from('estimates').delete().eq('id', estimateId)
         setErrorMsg('明細データの保存に失敗しました: ' + itemsError.message)
@@ -368,9 +349,7 @@ export default function ImportPage() {
 
   const warningCount = previewRows.filter(r => r.warning).length
   const allMatched = sectionMatches.length > 0 && sectionMatches.every(m => m.matched)
-  const sections = [...new Set(
-    previewRows.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section)
-  )]
+  const sections = [...new Set(previewRows.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section))]
 
   // ==================== STEP: upload ====================
   if (step === 'upload') return (
@@ -394,14 +373,11 @@ export default function ImportPage() {
             <input id="fileInput" type="file" accept=".xlsx,.xls" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
           </div>
-          {errorMsg && (
-            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-              ⚠️ {errorMsg}
-            </div>
-          )}
+          {errorMsg && <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">⚠️ {errorMsg}</div>}
           <div className="mt-4 text-xs text-gray-400">
             <div>ファイル名の形式: YYYYMMDD_ビル名_件名_担当者_工事種別.xlsx</div>
             <div className="mt-1">例: 20251112_新宿FT_32階天井工事_大塚_C工事.xlsx</div>
+            <div className="mt-1 text-blue-400">※ 新しいビル名はbuildingsテーブルに自動追加されます</div>
           </div>
         </div>
       </div>
@@ -418,17 +394,11 @@ export default function ImportPage() {
           <span className="text-sm font-bold text-gray-700">プレビュー確認</span>
           <span className="text-xs text-gray-500">{fileName}</span>
           <span className="text-xs text-gray-400 ml-1">{VERSION}</span>
-          {warningCount > 0 && (
-            <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded">
-              ⚠️ {warningCount}行 要確認
-            </span>
-          )}
+          {warningCount > 0 && <span className="bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded">⚠️ {warningCount}行 要確認</span>}
           <div className="ml-auto flex gap-2 items-center">
             <span className="text-xs text-gray-500">{previewRows.length}行</span>
             <button onClick={handleImport} disabled={importing || !allMatched}
-              className={`px-4 py-1.5 rounded text-sm font-bold transition-colors ${
-                allMatched ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
+              className={`px-4 py-1.5 rounded text-sm font-bold transition-colors ${allMatched ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
               title={allMatched ? 'SupabaseにINSERTする' : '全工事区分の合計が一致してから取り込めます'}>
               {importing ? '取り込み中...' : allMatched ? '取り込む' : '合計不一致のため取り込み不可'}
             </button>
@@ -442,9 +412,9 @@ export default function ImportPage() {
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">ビル名</label>
-            <select className="border rounded px-1 py-0.5 text-xs w-24"
+            <select className="border rounded px-1 py-0.5 text-xs w-28"
               value={headerInfo.building} onChange={e => setHeaderInfo({...headerInfo, building: e.target.value})}>
-              {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
+              {buildingList.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-0.5 flex-1 min-w-[160px]">
@@ -465,18 +435,12 @@ export default function ImportPage() {
             </select>
           </div>
         </div>
-        {errorMsg && (
-          <div className="mt-1 bg-red-50 border border-red-200 rounded px-3 py-1 text-xs text-red-700">
-            ⚠️ {errorMsg}
-          </div>
-        )}
+        {errorMsg && <div className="mt-1 bg-red-50 border border-red-200 rounded px-3 py-1 text-xs text-red-700">⚠️ {errorMsg}</div>}
       </div>
 
       <div className="p-4 max-w-6xl mx-auto">
         <div className="bg-white rounded-lg border mb-4 overflow-hidden">
-          <div className="bg-gray-800 text-white px-4 py-2 text-sm font-bold">
-            工事区分 合計確認（全て✓になると取り込み可能）
-          </div>
+          <div className="bg-gray-800 text-white px-4 py-2 text-sm font-bold">工事区分 合計確認（全て✓になると取り込み可能）</div>
           <table className="w-full text-xs">
             <thead className="bg-gray-100">
               <tr>
@@ -537,52 +501,28 @@ export default function ImportPage() {
                       return (
                         <tr key={idx} className={`border-t ${row.warning ? 'bg-yellow-50' : isExpense ? 'bg-gray-50' : ''}`}>
                           <td className="p-1 text-center text-gray-400">
-                            {row.warning
-                              ? <span title={row.warningMsg} className="text-yellow-600 cursor-help">⚠️</span>
-                              : <span className="text-gray-300">{row.rowNum}</span>
-                            }
+                            {row.warning ? <span title={row.warningMsg} className="text-yellow-600 cursor-help">⚠️</span> : <span className="text-gray-300">{row.rowNum}</span>}
                           </td>
                           <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs" value={row.name1}
-                              onChange={e => updateRow(idx, 'name1', e.target.value)} />
+                            <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs" value={row.name1} onChange={e => updateRow(idx, 'name1', e.target.value)} />
                             {(row.name2 || row.name3) && <>
-                              <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs text-gray-500" value={row.name2}
-                                onChange={e => updateRow(idx, 'name2', e.target.value)} />
-                              <input className="w-full border rounded px-1 py-0.5 text-xs text-gray-500" value={row.name3}
-                                onChange={e => updateRow(idx, 'name3', e.target.value)} />
+                              <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs text-gray-500" value={row.name2} onChange={e => updateRow(idx, 'name2', e.target.value)} />
+                              <input className="w-full border rounded px-1 py-0.5 text-xs text-gray-500" value={row.name3} onChange={e => updateRow(idx, 'name3', e.target.value)} />
                             </>}
                           </td>
                           <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs" value={row.spec1}
-                              onChange={e => updateRow(idx, 'spec1', e.target.value)} />
+                            <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs" value={row.spec1} onChange={e => updateRow(idx, 'spec1', e.target.value)} />
                             {(row.spec2 || row.spec3) && <>
-                              <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs text-gray-500" value={row.spec2}
-                                onChange={e => updateRow(idx, 'spec2', e.target.value)} />
-                              <input className="w-full border rounded px-1 py-0.5 text-xs text-gray-500" value={row.spec3}
-                                onChange={e => updateRow(idx, 'spec3', e.target.value)} />
+                              <input className="w-full border rounded px-1 py-0.5 mb-0.5 text-xs text-gray-500" value={row.spec2} onChange={e => updateRow(idx, 'spec2', e.target.value)} />
+                              <input className="w-full border rounded px-1 py-0.5 text-xs text-gray-500" value={row.spec3} onChange={e => updateRow(idx, 'spec3', e.target.value)} />
                             </>}
                           </td>
-                          <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 text-xs text-right" value={row.quantity}
-                              type="number" onChange={e => updateRow(idx, 'quantity', e.target.value)} />
-                          </td>
-                          <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 text-xs" value={row.unit}
-                              onChange={e => updateRow(idx, 'unit', e.target.value)} />
-                          </td>
-                          <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 text-xs text-right" value={row.unit_price}
-                              type="number" onChange={e => updateRow(idx, 'unit_price', e.target.value)} />
-                          </td>
+                          <td className="p-1"><input className="w-full border rounded px-1 py-0.5 text-xs text-right" value={row.quantity} type="number" onChange={e => updateRow(idx, 'quantity', e.target.value)} /></td>
+                          <td className="p-1"><input className="w-full border rounded px-1 py-0.5 text-xs" value={row.unit} onChange={e => updateRow(idx, 'unit', e.target.value)} /></td>
+                          <td className="p-1"><input className="w-full border rounded px-1 py-0.5 text-xs text-right" value={row.unit_price} type="number" onChange={e => updateRow(idx, 'unit_price', e.target.value)} /></td>
                           <td className="p-1 text-right pr-2">{row.amount.toLocaleString()}</td>
-                          <td className="p-1">
-                            <input className="w-full border rounded px-1 py-0.5 text-xs" value={row.note1}
-                              onChange={e => updateRow(idx, 'note1', e.target.value)} />
-                          </td>
-                          <td className="p-1 text-center">
-                            <button onClick={() => deleteRow(idx)}
-                              className="text-red-400 hover:text-red-600 text-xs">✕</button>
-                          </td>
+                          <td className="p-1"><input className="w-full border rounded px-1 py-0.5 text-xs" value={row.note1} onChange={e => updateRow(idx, 'note1', e.target.value)} /></td>
+                          <td className="p-1 text-center"><button onClick={() => deleteRow(idx)} className="text-red-400 hover:text-red-600 text-xs">✕</button></td>
                         </tr>
                       )
                     })}
@@ -605,13 +545,8 @@ export default function ImportPage() {
         <p className="text-sm text-gray-600 mb-6">{doneMsg}</p>
         <div className="flex flex-col gap-3">
           <button onClick={() => { setStep('upload'); setPreviewRows([]); setFileName(''); setDoneMsg('') }}
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700">
-            続けて取り込む
-          </button>
-          <a href="/history"
-            className="border border-gray-300 text-gray-600 px-4 py-2 rounded text-sm text-center hover:bg-gray-50">
-            historyに戻る
-          </a>
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-blue-700">続けて取り込む</button>
+          <a href="/history" className="border border-gray-300 text-gray-600 px-4 py-2 rounded text-sm text-center hover:bg-gray-50">historyに戻る</a>
         </div>
       </div>
     </main>
