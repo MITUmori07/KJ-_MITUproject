@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.18
+// バージョン: V6.0.18c
 // 更新: 2026/05/27
 // 変更: V6.0.18 feat: 搬除外・夜間赤字・N/O/P/Q/R列・H列夜間割増数式
 // ============================================================
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   }
 
   const addEmptyRow = () => {
-    const er = ws.getRow(r); er.height = 50; bd(er); r++; usedRows++
+    const er = ws.getRow(r); er.height = 37.5; bd(er); r++; usedRows++
   }
 
   // 経費はhistory画面から渡された値をそのまま使用
@@ -132,9 +132,10 @@ export async function POST(req: NextRequest) {
         sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         sr.getCell(12).value = '2%'
         sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-      } else if (key === 'unban' && hakobiExcludedTotal > 0) {
-        sr.getCell(14).value = `運搬除外計  ${Math.round(hakobiExcludedTotal).toLocaleString()}`
-        sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF666666' } }
+        if (hakobiExcludedTotal > 0) {
+          sr.getCell(14).value = `運搬除外計  ${Math.round(hakobiExcludedTotal).toLocaleString()}`
+          sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF666666' } }
+        }
       } else if (key === 'night' && nightNRows.length > 0) {
         const nightRow = r
         const sumFormula = nightNRows.length === 1
@@ -241,6 +242,9 @@ export async function POST(req: NextRequest) {
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
+      dr.getCell(13).value = Math.round(row.amount || 0)
+      dr.getCell(13).numFmt = NUM_FMT
+      dr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
       // 印刷範囲外（J〜N列）
       if (row.excludeHakobi) {
         dr.getCell(10).value = '搬除外'
