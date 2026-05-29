@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.18d
+// バージョン: V6.1.0
 // 更新: 2026/05/27
-// 変更: V6.0.18d feat: ヘッダーL/M/N列ラベル・運搬費O/P列ラベル追加
+// 変更: V6.1.0 feat: 仮設/運搬H列数式・色変更・深夜率%削除・600dpi
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -65,9 +65,9 @@ export async function POST(req: NextRequest) {
       h.getCell(i).font = f(10)
       h.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
     })
-    h.getCell(12).value = '労務比率'; h.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-    h.getCell(13).value = '搬入除外計'; h.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-    h.getCell(14).value = '計×労務比率'; h.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+    h.getCell(12).value = '労務比率'; h.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+    h.getCell(13).value = '搬入除外計'; h.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+    h.getCell(14).value = '計×労務比率'; h.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
     bd(h); r++
   }
 
@@ -125,23 +125,21 @@ export async function POST(req: NextRequest) {
           sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         }
       } else if (key === 'keihi' && subtotalRow) {
-        sr.getCell(13).value = { formula: `FLOOR(H${subtotalRow}*0.07,10)` }
-        sr.getCell(13).numFmt = NUM_FMT
-        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        sr.getCell(8).value = { formula: `FLOOR(H${subtotalRow}*0.07,10)` }
+        sr.getCell(8).font = f(10)
         sr.getCell(12).value = '7%'
         sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
       } else if (key === 'unban' && subtotalRow) {
-        sr.getCell(13).value = { formula: `FLOOR(M${subtotalRow}*0.02,10)` }
-        sr.getCell(13).numFmt = NUM_FMT
-        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        sr.getCell(8).value = { formula: `FLOOR(H${subtotalRow}*0.02,10)` }
+        sr.getCell(8).font = f(10)
         sr.getCell(12).value = '2%'
         sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
         if (hakobiExcludedTotal > 0) {
           sr.getCell(14).value = `運搬除外計  ${Math.round(hakobiExcludedTotal).toLocaleString()}`
-          sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF666666' } }
+          sr.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         }
-        sr.getCell(15).value = '夜間割増'; sr.getCell(15).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-        sr.getCell(16).value = '深夜率';   sr.getCell(16).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+        sr.getCell(15).value = '夜間割増'; sr.getCell(15).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+        sr.getCell(16).value = '深夜率';   sr.getCell(16).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
       } else if (key === 'night' && nightNRows.length > 0) {
         const nightRow = r
         const sumFormula = nightNRows.length === 1
@@ -154,9 +152,8 @@ export async function POST(req: NextRequest) {
         sr.getCell(15).value = 0.5;  sr.getCell(15).numFmt = '0%'; sr.getCell(15).font = RED
         sr.getCell(16).value = lr;   sr.getCell(16).numFmt = '0%'; sr.getCell(16).font = RED
         if (dp > 0) {
-          sr.getCell(17).value = dp; sr.getCell(17).numFmt = '0%'; sr.getCell(17).font = RED
+          sr.getCell(17).value = dp; sr.getCell(17).numFmt = '0'; sr.getCell(17).font = RED
         }
-        // R列廃止・H式: =N*(O+Q)
         sr.getCell(8).value = { formula: `N${nightRow}*(O${nightRow}+Q${nightRow})` }
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = { name: FONT, size: 10, color: { argb: 'FFCC0000' } }
       } else if (key === 'total') {
@@ -180,9 +177,9 @@ export async function POST(req: NextRequest) {
     h2.getCell(i).font = f(10)
     h2.getCell(i).alignment = { horizontal: 'center', vertical: 'middle' }
   })
-  h2.getCell(12).value = '労務比率'; h2.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-  h2.getCell(13).value = '搬入除外計'; h2.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
-  h2.getCell(14).value = '計×労務比率'; h2.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
+  h2.getCell(12).value = '労務比率'; h2.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
+  h2.getCell(13).value = '搬入除外計'; h2.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+  h2.getCell(14).value = '計×労務比率'; h2.getCell(14).font = { name: FONT, size: 8, color: { argb: 'FFCC0000' } }
   bd(h2); r++
   const tRow = ws.getRow(r)
   tRow.getCell(2).value = 'Ⅱ'; tRow.getCell(3).value = '建築工事'
@@ -298,6 +295,8 @@ export async function POST(req: NextRequest) {
   ws.pageSetup.fitToPage = true
   ws.pageSetup.fitToWidth = 1
   ws.pageSetup.fitToHeight = 0
+  ws.pageSetup.horizontalDpi = 600
+  ws.pageSetup.verticalDpi = 600
 
   // 余白設定（cm → インチ換算）
   ws.pageSetup.margins = {
