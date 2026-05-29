@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.2.9a
+// バージョン: V1.2.9b
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -88,6 +88,7 @@ export default function HistoryPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate|null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
+  const [buildingList, setBuildingList] = useState<string[]>(['新宿FT','新宿ESS'])
   const [loading, setLoading] = useState(false)
   const [copying, setCopying] = useState(false)
   const [showTitleList, setShowTitleList] = useState(false)
@@ -148,7 +149,7 @@ export default function HistoryPage() {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
   }
 
-  useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears() }, [])
+  useEffect(() => { loadEstimates(); loadUnits(); loadAvailableYears(); loadBuildings() }, [])
   useEffect(() => { if (showEstimate) setIs2Pane(true) }, [showEstimate])
   useEffect(() => {
     if (sections.length > 0 && copyInfo && copyInfo.originalTotal === 0) {
@@ -157,6 +158,10 @@ export default function HistoryPage() {
     }
   }, [sections])
 
+  const loadBuildings = async () => {
+    const { data } = await supabase.from('buildings').select('name').order('sort_order')
+    if (data && data.length > 0) setBuildingList(data.map((b: {name: string}) => b.name))
+  }
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
       .select('id,date,building,title,staff,work_type,version,base_id,is_archived').order('date', { ascending: false })
@@ -268,7 +273,8 @@ export default function HistoryPage() {
       baseId = baseIdVal
     }
     setCopyInfo({
-      building: selectedEstimate.building, staff: selectedEstimate.staff,
+      building: buildingList.includes(selectedEstimate.building) ? selectedEstimate.building : buildingList[0] || '新宿FT',
+      staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
       draft_id: draftData ? draftData.id : null,
       date: mode === 'A' ? selectedEstimate.date : '',
@@ -1134,7 +1140,7 @@ export default function HistoryPage() {
             <label className="text-xs text-gray-400">ビル名</label>
             <select className="border rounded px-1 py-0.5 text-xs w-24" value={copyInfo!.building}
               onChange={e => setCopyInfo({...copyInfo!, building: e.target.value})}>
-              {['新宿FT','新宿ESS'].map(b => <option key={b} value={b}>{b}</option>)}
+              {buildingList.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
