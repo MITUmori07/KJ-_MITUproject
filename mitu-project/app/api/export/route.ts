@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.1.3
+// バージョン: V6.1.4
 // 更新: 2026/05/27
 // 変更: V6.1.3 fix: N列=H×L数式・P列deepRate・現場経費/総計H数式
 // ============================================================
@@ -121,9 +121,6 @@ export async function POST(req: NextRequest) {
         subtotalRow = r
         if (firstDataRow && lastDataRow) {
           sr.getCell(8).value = { formula: `SUM(H${firstDataRow}:H${lastDataRow})` }
-          sr.getCell(13).value = { formula: `SUM(M${firstDataRow}:M${lastDataRow})` }
-          sr.getCell(13).numFmt = NUM_FMT
-          sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         }
       } else if (key === 'keihi' && subtotalRow) {
         sr.getCell(8).value = { formula: `FLOOR(H${subtotalRow}*0.07,10)` }
@@ -132,10 +129,11 @@ export async function POST(req: NextRequest) {
         sr.getCell(12).font = { name: FONT, size: 8, color: { argb: 'FF999999' } }
       } else if (key === 'unban' && subtotalRow) {
         const unbanRow = r
-        const hakobiBase = Math.round((section.rows.reduce((s: number, row: any) => s + (row.amount || 0), 0)) - hakobiExcludedTotal)
-        sr.getCell(13).value = hakobiBase
-        sr.getCell(13).numFmt = NUM_FMT
-        sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        if (firstDataRow && lastDataRow) {
+          sr.getCell(13).value = { formula: `SUM(M${firstDataRow}:M${lastDataRow})` }
+          sr.getCell(13).numFmt = NUM_FMT
+          sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
+        }
         sr.getCell(8).value = { formula: `FLOOR(M${unbanRow}*0.02,10)` }
         sr.getCell(8).font = f(10)
         sr.getCell(12).value = '2%'
@@ -163,6 +161,7 @@ export async function POST(req: NextRequest) {
         sr.getCell(8).value = { formula: `H${totalRow}-SUM(H${subtotalRow}:H${nightSubtotalRow})` }
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = f(10)
       } else if (key === 'total' && subtotalRow && nightSubtotalRow) {
+        sectionTotalRowNums[sIdx] = r
         sr.getCell(8).value = { formula: `FLOOR(SUM(H${subtotalRow}:H${nightSubtotalRow})*1.1,1000)` }
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = f(10)
       }
@@ -170,6 +169,9 @@ export async function POST(req: NextRequest) {
       sr.height = 37.5; bd(sr); r++; usedRows++
     })
   }
+
+  const sectionTotalRowNums: number[] = []
+  const page1RowNums: number[] = []
 
   // === ページ1: サマリー固定レイアウト ===
   r = 1; ws.getRow(r).height = 15.95; r++
@@ -196,6 +198,7 @@ export async function POST(req: NextRequest) {
   const e1 = ws.getRow(r); e1.height = 37.5; bd(e1); r++
   sections.forEach((section: any, idx: number) => {
     const sr = ws.getRow(r)
+    page1RowNums[idx] = r
     sr.getCell(2).value = idx + 1; sr.getCell(3).value = section.name
     sr.getCell(5).value = 1; sr.getCell(6).value = '式'
     sr.getCell(5).numFmt = DEC_FMT
@@ -206,6 +209,7 @@ export async function POST(req: NextRequest) {
   })
   while (r < 13) { const er = ws.getRow(r); er.height = 37.5; bd(er); r++ }
   const gtRow = ws.getRow(r)
+  const gtRowNum = r
   gtRow.getCell(4).value = 'Ⅱ- 建築工事の計'
   gtRow.getCell(8).value = Math.round(sections.reduce((s: number, sec: any) => s + getSectionTotal(sec), 0))
   gtRow.getCell(8).numFmt = NUM_FMT
@@ -316,6 +320,21 @@ export async function POST(req: NextRequest) {
   const totalRows = r - 1
   for (let br = 29; br <= totalRows; br += 29) {
     ws.getRow(br).addPageBreak()
+  }
+
+  // page1の工事区分H列を総計行への参照数式に更新
+  sections.forEach((_: any, idx: number) => {
+    const totalRowNum = sectionTotalRowNums[idx]
+    if (totalRowNum && page1RowNums[idx]) {
+      ws.getRow(page1RowNums[idx]).getCell(8).value = { formula: `H${totalRowNum}` }
+      ws.getRow(page1RowNums[idx]).getCell(8).numFmt = NUM_FMT
+    }
+  })
+  // 建築工事の計も数式に
+  const validNums = sectionTotalRowNums.filter(Boolean)
+  if (validNums.length > 0) {
+    ws.getRow(gtRowNum).getCell(8).value = { formula: validNums.map(n => `H${n}`).join('+') }
+    ws.getRow(gtRowNum).getCell(8).numFmt = NUM_FMT
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer()
