@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.2.9b
+// バージョン: V1.2.9c
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -887,23 +887,13 @@ export default function HistoryPage() {
         <div className="p-4 flex flex-col gap-3">
           <button onClick={() => handleCopyToEdit('A')}
             className="w-full text-left border-2 border-red-200 rounded-lg px-4 py-3 hover:bg-red-50 transition-colors">
-            <div className="font-bold text-red-700 text-sm">A: 上書き編集</div>
-            <div className="text-xs text-gray-500 mt-1">件名・数量そのまま。元データを上書き保存します。</div>
+            <div className="font-bold text-red-700 text-sm">上書き編集</div>
+            <div className="text-xs text-gray-500 mt-1">件名・数量そのまま。上書き保存 or 新版として確定できます。</div>
           </button>
           <button onClick={() => handleCopyToEdit('B')}
             className="w-full text-left border-2 border-blue-200 rounded-lg px-4 py-3 hover:bg-blue-50 transition-colors">
-            <div className="font-bold text-blue-700 text-sm">B: コピー（数量なし）</div>
+            <div className="font-bold text-blue-700 text-sm">コピー（数量なし）</div>
             <div className="text-xs text-gray-500 mt-1">品目・単価はコピー。数量は新規入力。新しい件名で保存。</div>
-          </button>
-          <button onClick={() => handleCopyToEdit('C')}
-            className="w-full text-left border-2 border-orange-200 rounded-lg px-4 py-3 hover:bg-orange-50 transition-colors">
-            <div className="font-bold text-orange-700 text-sm">C: コピー（数量あり）</div>
-            <div className="text-xs text-gray-500 mt-1">全項目をそのままコピー。数量含めて複製。新しい件名で保存。</div>
-          </button>
-          <button onClick={() => { setShowCopyModeModal(false); loadDrafts(); setShowDraftListModal(true) }}
-            className="w-full text-left border-2 border-gray-200 rounded-lg px-4 py-3 hover:bg-gray-50 transition-colors">
-            <div className="font-bold text-gray-700 text-sm">D: 途中保存から再開</div>
-            <div className="text-xs text-gray-500 mt-1">保存済みの下書き一覧から選んで編集を再開。</div>
           </button>
         </div>
         <div className="px-4 pb-4">
@@ -1531,6 +1521,9 @@ export default function HistoryPage() {
           title="コピー方法を選択して編集">
           {copying || loading ? '読込中...' : is2Pane ? '→編集' : 'コピー編集'}
         </button>
+        <button onClick={() => { loadDrafts(); setShowDraftListModal(true) }}
+          className="bg-amber-500 text-white px-2 py-0.5 rounded text-xs hover:bg-amber-600 whitespace-nowrap"
+          title="途中保存した下書きから再開">下書き</button>
         <a href="/import"
           className="bg-purple-600 text-white px-2 py-0.5 rounded text-xs hover:bg-purple-700 whitespace-nowrap"
           title="Excelファイルを取り込む">取り込み</a>
