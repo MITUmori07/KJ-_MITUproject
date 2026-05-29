@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.2.9c
+// バージョン: V1.2.9d
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -89,6 +89,7 @@ export default function HistoryPage() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate|null>(null)
   const [items, setItems] = useState<EstimateItem[]>([])
   const [buildingList, setBuildingList] = useState<string[]>(['新宿FT','新宿ESS'])
+  const [titleEditable, setTitleEditable] = useState(false)
   const [loading, setLoading] = useState(false)
   const [copying, setCopying] = useState(false)
   const [showTitleList, setShowTitleList] = useState(false)
@@ -285,7 +286,7 @@ export default function HistoryPage() {
       baseId, currentVersion, existingVersions,
       overwriteId: selectedEstimate.id,
     })
-    setCopying(false); setShowEstimate(true)
+    setCopying(false); setShowEstimate(true); setTitleEditable(false)
   }
 
   const loadDrafts = async () => {
@@ -1133,15 +1134,22 @@ export default function HistoryPage() {
               {buildingList.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
+          <div className="flex flex-col items-center justify-end pb-1">
+            <label className="text-xs text-gray-400 mb-0.5">件名変更</label>
+            <input type="checkbox" checked={titleEditable}
+              onChange={e => setTitleEditable(e.target.checked)}
+              className="w-4 h-4 cursor-pointer accent-blue-600"
+              title="チェックで件名を編集可能にする" />
+          </div>
           <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
             <label className="text-xs text-gray-400">件名<span className="text-red-400">*</span></label>
             <div className="flex items-center gap-1">
               <input type="text"
                 ref={titleInputRef}
                 key={`title-${copyInfo!.source_estimate_id || 'new'}-${copyInfo!.draft_id || ''}`}
-                className={`border rounded px-1 py-0.5 text-xs flex-1 ${copyInfo!.source_estimate_id ? 'bg-gray-100 text-gray-600' : ''}`}
+                className={`border rounded px-1 py-0.5 text-xs flex-1 ${copyInfo!.source_estimate_id && !titleEditable ? 'bg-gray-100 text-gray-600' : 'bg-white'}`}
                 defaultValue={copyInfo!.title} placeholder="件名を入力"
-                readOnly={!!copyInfo!.source_estimate_id} />
+                readOnly={!!copyInfo!.source_estimate_id && !titleEditable} />
               {copyInfo!.source_estimate_id && (
                 <div className="flex gap-0.5">
                   {Array.from({ length: copyInfo!.existingVersions.length + 1 }, (_, i) => String.fromCharCode(65 + i)).map(v => {
