@@ -1,9 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.0.18c
+// バージョン: V6.0.19
 // 更新: 2026/05/27
-// 変更: V6.0.18 feat: 搬除外・夜間赤字・N/O/P/Q/R列・H列夜間割増数式
+// 変更: V6.0.19 fix: H小計SUM式・仮設H参照・夜間H式修正・R廃止
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -116,12 +116,13 @@ export async function POST(req: NextRequest) {
       if (key === 'subtotal') {
         subtotalRow = r
         if (firstDataRow && lastDataRow) {
+          sr.getCell(8).value = { formula: `SUM(H${firstDataRow}:H${lastDataRow})` }
           sr.getCell(13).value = { formula: `SUM(M${firstDataRow}:M${lastDataRow})` }
           sr.getCell(13).numFmt = NUM_FMT
           sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         }
       } else if (key === 'keihi' && subtotalRow) {
-        sr.getCell(13).value = { formula: `FLOOR(M${subtotalRow}*0.07,10)` }
+        sr.getCell(13).value = { formula: `FLOOR(H${subtotalRow}*0.07,10)` }
         sr.getCell(13).numFmt = NUM_FMT
         sr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
         sr.getCell(12).value = '7%'
@@ -147,9 +148,11 @@ export async function POST(req: NextRequest) {
         sr.getCell(14).value = { formula: sumFormula }; sr.getCell(14).numFmt = NUM_FMT; sr.getCell(14).font = RED
         sr.getCell(15).value = 0.5;  sr.getCell(15).numFmt = '0%'; sr.getCell(15).font = RED
         sr.getCell(16).value = lr;   sr.getCell(16).numFmt = '0%'; sr.getCell(16).font = RED
-        sr.getCell(17).value = 0.2;  sr.getCell(17).numFmt = '0%'; sr.getCell(17).font = RED
-        sr.getCell(18).value = dp;   sr.getCell(18).numFmt = '0%'; sr.getCell(18).font = RED
-        sr.getCell(8).value = { formula: `N${nightRow}*O${nightRow}+N${nightRow}*Q${nightRow}*R${nightRow}` }
+        if (dp > 0) {
+          sr.getCell(17).value = dp; sr.getCell(17).numFmt = '0%'; sr.getCell(17).font = RED
+        }
+        // R列廃止・H式: =N*(O+Q)
+        sr.getCell(8).value = { formula: `N${nightRow}*(O${nightRow}+Q${nightRow})` }
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = { name: FONT, size: 10, color: { argb: 'FFCC0000' } }
       } else if (key === 'total') {
         sr.getCell(13).value = amt
@@ -242,7 +245,7 @@ export async function POST(req: NextRequest) {
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
-      dr.getCell(13).value = Math.round(row.amount || 0)
+      dr.getCell(13).value = row.excludeHakobi ? 0 : Math.round(row.amount || 0)
       dr.getCell(13).numFmt = NUM_FMT
       dr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
       // 印刷範囲外（J〜N列）
