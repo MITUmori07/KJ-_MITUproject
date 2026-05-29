@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.0.29
+// バージョン: V1.2.9a
 // 更新: 2026/05/27
 // 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
 // ============================================================
@@ -215,11 +215,12 @@ export default function HistoryPage() {
       alert('明細データがありません'); setCopying(false); return
     }
     const normalItems = freshItems.filter((i: EstimateItem) => !i.work_section.startsWith('経費_'))
+    const expenseItems = freshItems.filter((i: EstimateItem) => i.work_section.startsWith('経費_'))
     const rawNames = [...new Set(normalItems.map((i: EstimateItem) => i.work_section))] as string[]
     const sortedNames = sortSectionNames(rawNames)
     const newSections = sortedNames.map((name: string) => {
       const expWs = `経費_${name}`
-      const nightExp = expItems.find((i: EstimateItem) => i.work_section === expWs && i.name1 === '深夜作業割増')
+      const nightExp = expenseItems.find((i: EstimateItem) => i.work_section === expWs && i.name1 === '深夜作業割増')
       return {
         id: Math.random().toString(36).slice(2), name,
         rows: normalItems.filter((i: EstimateItem) => i.work_section === name).map((item: EstimateItem) => ({
