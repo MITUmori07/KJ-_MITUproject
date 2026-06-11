@@ -1,9 +1,8 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.2.9d
-// 更新: 2026/05/27
-// 変更: V1.0.28b fix: renderHistory閉じ括弧修正 / feat: Excelファイル名の先頭に版名を追加
+// バージョン: V1.3.0
+// 更新: V1.3.0 feat: 一覧出力（1行2段明細 /api/export-list）ボタン・handleExportList/handleExportListHistory追加
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -774,6 +773,35 @@ export default function HistoryPage() {
     a.click()
   }
 
+  // ★ 追加: 1行2段明細の一覧出力（コピー編集エリア用 / handleExportと同じ組み立て）
+  const handleExportList = async () => {
+    if (!copyInfo) return
+    if (copying) { alert('データ読み込み中です'); return }
+    if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
+    if (!copyInfo.date) { alert('日付を入力してください'); return }
+    const currentTitle = titleInputRef.current?.value || copyInfo.title
+    if (!currentTitle) { alert('件名を入力してください'); return }
+    const sectionsWithExpenses = sections.map(s => ({
+      ...s,
+      keihi: getKeihiCost(s),
+      unban: getHakobiCost(s),
+      night: getNightCost(s),
+      genba: getGenbaCost(s),
+      sectionTotal: getSectionTotal(s),
+      nightDeepRate: s.nightDeepRate,
+    }))
+    const res = await fetch('/api/export-list', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: copyInfo.date, building: copyInfo.building, title: currentTitle, staff: copyInfo.staff, work_type: copyInfo.work_type, sections: sectionsWithExpenses })
+    })
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${copyInfo.currentVersion || 'A'}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}_一覧.xlsx`
+    a.click()
+  }
+
   const filteredEstimates = estimates.filter(e => {
     if (filters.staff && e.staff !== filters.staff) return false
     if (filters.building && e.building !== filters.building) return false
@@ -860,6 +888,54 @@ export default function HistoryPage() {
     const a = document.createElement('a')
     a.href = url
     a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}.xlsx`
+    a.click()
+  }
+
+  // ★ 追加: 1行2段明細の一覧出力（閲覧画面用 / handleExportHistoryと同じ組み立て）
+  const handleExportListHistory = async () => {
+    if (!selectedEstimate) return
+    const exportSections = sectionNames.map(name => {
+      const { sectionItems, expenses, subtotal: sub } = getSectionData(name)
+      const expenseRows = expenses.filter(e => e.name1 !== '小計')
+      const getExpenseAmount = (expName: string, altName?: string) => {
+        const exp = expenseRows.find(e => e.name1 === expName || (altName && e.name1 === altName))
+        return exp ? (exp.amount || 0) : 0
+      }
+      const keihi = getExpenseAmount('仮設工事費')
+      const unban = getExpenseAmount('運搬費')
+      const night = getExpenseAmount('深夜作業割増', '深夜休日作業割増')
+      const genba = getExpenseAmount('現場経費', '現場雑費')
+      const zeinuki = sub + keihi + unban + night
+      const sectionTotal = Math.floor(zeinuki * 1.10 / 100) * 100
+      const genbaCalc = sectionTotal - zeinuki
+      return {
+        id: name, name,
+        rows: sectionItems.map(item => ({
+          id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
+          spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
+          quantity: String(item.quantity), unit: item.unit||'',
+          unit_price: String(item.unit_price), amount: item.amount,
+          note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
+          excludeHakobi: item.exclude_hakobi || false,
+          nightWork: item.night_work || false,
+          laborRate: String(item.labor_rate ?? 60),
+          nightDeepRate: String(item.night_deep_rate ?? 0),
+          candidates: [], showCandidates: false,
+        })),
+        keihi, unban, night,
+        genba: genba > 0 ? genba : genbaCalc,
+        sectionTotal: genba > 0 ? sub + keihi + unban + night + genba : sectionTotal,
+      }
+    })
+    const res = await fetch('/api/export-list', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: selectedEstimate.date, building: selectedEstimate.building, title: selectedEstimate.title, staff: selectedEstimate.staff, work_type: selectedEstimate.work_type, sections: exportSections })
+    })
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}_一覧.xlsx`
     a.click()
   }
 
@@ -1223,6 +1299,10 @@ export default function HistoryPage() {
             <button onClick={handleExport}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
               title="Excel出力（日付・件名必須）">Excel出力</button>
+            {/* ★ 追加: 一覧出力 */}
+            <button onClick={handleExportList}
+              className="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-emerald-700"
+              title="1行2段明細の一覧Excelを出力（日付・件名必須）">一覧出力</button>
           </div>
         </div>
       </div>
@@ -1519,6 +1599,12 @@ export default function HistoryPage() {
           <button onClick={handleExportHistory}
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap"
             title="Excel出力">Excel</button>
+        )}
+        {/* ★ 追加: 一覧出力（閲覧画面） */}
+        {!is2Pane && (
+          <button onClick={handleExportListHistory}
+            className="bg-emerald-600 text-white px-2 py-0.5 rounded text-xs hover:bg-emerald-700 whitespace-nowrap"
+            title="1行2段明細の一覧Excelを出力">一覧</button>
         )}
         <button onClick={handleNewEstimate}
           className="bg-teal-600 text-white px-2 py-0.5 rounded text-xs hover:bg-teal-700 whitespace-nowrap"
