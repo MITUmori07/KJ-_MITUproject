@@ -1,10 +1,10 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export-list/
 // ファイル名: route.ts
-// バージョン: V1.2.1
+// バージョン: V1.3.0
 // 作成: 2026/05/27
-// 更新: V1.2.1 fix: thin罫線の型注釈エラー解消（as const）
-//       V1.2.0 fix: 列幅/行高を実数値に / NO.右寄せ9pt / 小計・経費・合計を全2段化
+// 更新: V1.3.0 feat: No.1〜100連番固定 / No.1上段=工事区分名 / 品目はNo.2から /
+//                    小計行・○○の計を削除（経費4行は残す）
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
@@ -15,13 +15,15 @@ export const runtime = 'nodejs'
 const FONT        = 'ＭＳ Ｐゴシック'
 const SIZE_TITLE  = 9   // タイトル行
 const SIZE_DETAIL = 11  // 明細
-const SIZE_NO     = 9   // NO.
+const SIZE_NO     = 9   // No.
 
 const HEIGHT_TITLE  = 25.5
 const HEIGHT_DETAIL = 12.75   // 1段あたり（固定）
 
 // 列幅 A〜H（Excel列幅単位）
 const COL_WIDTHS = [4.00, 24.00, 30.00, 10.00, 4.50, 10.88, 12.00, 12.00]
+
+const MAX_NO = 100   // No.1〜100まで固定で番号を振る
 
 const NUM_FMT = '#,##0'
 const QTY_FMT = '0.0'
@@ -136,135 +138,114 @@ export async function POST(req: NextRequest) {
         c.border = { top: thin, bottom: thin, left: thin, right: thin }
       })
 
-      let r = 2
-      let itemNo = 1
-      const firstRow = r
-
-      // 上段を書く共通処理
-      const writeUpper = (vals: (ExcelJS.CellValue)[]) => {
-        const row = ws.getRow(r); row.height = HEIGHT_DETAIL
-        for (let c = 1; c <= 8; c++) {
-          const cell = row.getCell(c)
-          cell.value = vals[c - 1] ?? ''
-          cell.font = { name: FONT, size: SIZE_DETAIL }
-          cell.border = BORDER_UPPER
-        }
-        r++
-        return row
-      }
-
-      for (const row of section.rows ?? []) {
+      // 有効な品目だけ抽出（空行は除外）
+      const items = (section.rows ?? []).filter(row => {
         const name1 = (row.name1 ?? '').trim()
         const name2 = (row.name2 ?? '').trim()
         const spec1 = (row.spec1 ?? '').trim()
-        const spec2 = (row.spec2 ?? '').trim()
-        const note1 = (row.note1 ?? '').trim()
-        const note2 = (row.note2 ?? '').trim()
-        const qty   = toNum(row.quantity)
-        const price = toNum(row.unit_price)
         const amount = toNum(row.amount)
+        return !!(name1 || name2 || spec1 || amount)
+      })
 
-        if (!name1 && !name2 && !spec1 && !amount) continue
+      // 1品目を上段・下段に流し込む
+      const fillItem = (up: ExcelJS.Row, lo: ExcelJS.Row, item: ExportRow) => {
+        const name1 = (item.name1 ?? '').trim()
+        const name2 = (item.name2 ?? '').trim()
+        const spec1 = (item.spec1 ?? '').trim()
+        const spec2 = (item.spec2 ?? '').trim()
+        const note1 = (item.note1 ?? '').trim()
+        const note2 = (item.note2 ?? '').trim()
+        const qty   = toNum(item.quantity)
+        const price = toNum(item.unit_price)
+        const amount = toNum(item.amount)
+        const has2Name = !!name2, has2Spec = !!spec2, has2Note = !!note2
 
-        const has2Name = !!name2
-        const has2Spec = !!spec2
-        const has2Note = !!note2
-
-        // ── 上段（名称・仕様・備考の1段目。1段のみなら空白）──
-        writeUpper([
-          '',                          // A
-          has2Name ? name1 : '',       // B 名称1段目
-          has2Spec ? spec1 : '',       // C 仕様1段目
-          '', '', '', '',              // D〜G（数量〜金額は下段のみ）
-          has2Note ? note1 : '',       // H 備考1段目
-        ])
-
-        // ── 下段（NO.・数量〜金額・名称等の最終段）──
-        const lower = ws.getRow(r); lower.height = HEIGHT_DETAIL
-        for (let c = 1; c <= 8; c++) {
-          lower.getCell(c).font = { name: FONT, size: SIZE_DETAIL }
-          lower.getCell(c).border = BORDER_LOWER
+        // 上段（2段あるときの1段目。1段のみなら空白）
+        up.getCell(2).value = has2Name ? name1 : ''
+        up.getCell(3).value = has2Spec ? spec1 : ''
+        up.getCell(8).value = has2Note ? note1 : ''
+        // 下段（最終段の名称・仕様・備考、数量〜金額）
+        lo.getCell(2).value = has2Name ? name2 : name1
+        lo.getCell(3).value = has2Spec ? spec2 : spec1
+        lo.getCell(8).value = has2Note ? note2 : note1
+        if (qty !== null) {
+          lo.getCell(4).value = qty; lo.getCell(4).numFmt = QTY_FMT
+          lo.getCell(4).alignment = { horizontal: 'right' }
         }
-        // A: No.（数値・右寄せ・9pt）
-        const cNo = lower.getCell(1)
-        cNo.value = itemNo
+        lo.getCell(5).value = item.unit ?? ''
+        lo.getCell(5).alignment = { horizontal: 'center' }
+        if (price !== null) {
+          lo.getCell(6).value = price; lo.getCell(6).numFmt = NUM_FMT
+          lo.getCell(6).alignment = { horizontal: 'right' }
+        }
+        if (amount !== null) {
+          lo.getCell(7).value = amount; lo.getCell(7).numFmt = NUM_FMT
+          lo.getCell(7).alignment = { horizontal: 'right' }
+        }
+      }
+
+      // No.1〜100 を固定で配置（1=工事区分名 / 2以降=品目 / 余りは番号だけ）
+      let r = 2
+      for (let no = 1; no <= MAX_NO; no++) {
+        // 上段
+        const up = ws.getRow(r); up.height = HEIGHT_DETAIL
+        for (let c = 1; c <= 8; c++) {
+          up.getCell(c).font = { name: FONT, size: SIZE_DETAIL }
+          up.getCell(c).border = BORDER_UPPER
+        }
+        // 下段
+        const lo = ws.getRow(r + 1); lo.height = HEIGHT_DETAIL
+        for (let c = 1; c <= 8; c++) {
+          lo.getCell(c).font = { name: FONT, size: SIZE_DETAIL }
+          lo.getCell(c).border = BORDER_LOWER
+        }
+        // A列 No.（数値・右寄せ・9pt）
+        const cNo = lo.getCell(1)
+        cNo.value = no
         cNo.font = { name: FONT, size: SIZE_NO }
         cNo.alignment = { horizontal: 'right', vertical: 'middle' }
-        // B/C/H: 2段なら2段目・1段なら本体
-        lower.getCell(2).value = has2Name ? name2 : name1
-        lower.getCell(3).value = has2Spec ? spec2 : spec1
-        lower.getCell(8).value = has2Note ? note2 : note1
-        // D 数量
-        if (qty !== null) {
-          lower.getCell(4).value = qty
-          lower.getCell(4).numFmt = QTY_FMT
-          lower.getCell(4).alignment = { horizontal: 'right' }
-        }
-        // E 単位
-        lower.getCell(5).value = row.unit ?? ''
-        lower.getCell(5).alignment = { horizontal: 'center' }
-        // F 単価
-        if (price !== null) {
-          lower.getCell(6).value = price
-          lower.getCell(6).numFmt = NUM_FMT
-          lower.getCell(6).alignment = { horizontal: 'right' }
-        }
-        // G 金額
-        if (amount !== null) {
-          lower.getCell(7).value = amount
-          lower.getCell(7).numFmt = NUM_FMT
-          lower.getCell(7).alignment = { horizontal: 'right' }
-        }
-        r++
-        itemNo++
-      }
-      const lastDataRow = r - 1
 
-      // ── 小計・経費・合計：すべて2段（上段空白・下段に表記）──
-      const writeSummary2 = (
-        label: string,
-        value: ExcelJS.CellValue,
-        fill: string,
-        bold: boolean,
-        formula?: string
-      ) => {
-        // 上段（空白）
+        if (no === 1) {
+          // No.1 上段 = 工事区分名（太字）、下段は空白
+          const cName = up.getCell(2)
+          cName.value = section.name
+          cName.font = { name: FONT, size: SIZE_DETAIL, bold: true }
+        } else {
+          // No.2 以降 = 品目（あれば）。なければ番号だけ
+          const item = items[no - 2]
+          if (item) fillItem(up, lo, item)
+        }
+        r += 2
+      }
+
+      // ─── 経費（仮設・運搬・夜間・現場）各2段。小計・計は無し ───
+      const writeExpense2 = (label: string, value: ExcelJS.CellValue) => {
         const up = ws.getRow(r); up.height = HEIGHT_DETAIL
         for (let c = 1; c <= 8; c++) {
           const cell = up.getCell(c)
-          cell.font = { name: FONT, size: SIZE_DETAIL, bold }
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
+          cell.font = { name: FONT, size: SIZE_DETAIL }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL_EXPENSE } }
           cell.border = BORDER_UPPER
         }
         r++
-        // 下段（表記）
         const lo = ws.getRow(r); lo.height = HEIGHT_DETAIL
         for (let c = 1; c <= 8; c++) {
           const cell = lo.getCell(c)
-          cell.font = { name: FONT, size: SIZE_DETAIL, bold }
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
+          cell.font = { name: FONT, size: SIZE_DETAIL }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL_EXPENSE } }
           cell.border = BORDER_LOWER
         }
         lo.getCell(2).value = label
         const g = lo.getCell(7)
-        g.value = formula ? { formula } : value
-        g.numFmt = NUM_FMT
+        g.value = value; g.numFmt = NUM_FMT
         g.alignment = { horizontal: 'right' }
         r++
       }
 
-      // 小計（SUM式）
-      writeSummary2(
-        '小計', 0, FILL_EXPENSE, true,
-        lastDataRow >= firstRow ? `SUM(G${firstRow}:G${lastDataRow})` : undefined
-      )
-      // 経費
-      writeSummary2('仮設工事費', toNum(section.keihi) ?? 0, FILL_EXPENSE, false)
-      writeSummary2('運搬費',     toNum(section.unban) ?? 0, FILL_EXPENSE, false)
-      writeSummary2('夜間割増費', toNum(section.night) ?? 0, FILL_EXPENSE, false)
-      writeSummary2('現場経費',   toNum(section.genba) ?? 0, FILL_EXPENSE, false)
-      // 工事区分合計
-      writeSummary2(`${section.name}の計`, toNum(section.sectionTotal) ?? 0, FILL_TOTAL, true)
+      writeExpense2('仮設工事費', toNum(section.keihi) ?? 0)
+      writeExpense2('運搬費',     toNum(section.unban) ?? 0)
+      writeExpense2('夜間割増費', toNum(section.night) ?? 0)
+      writeExpense2('現場経費',   toNum(section.genba) ?? 0)
     }
 
     const buffer = await wb.xlsx.writeBuffer()
