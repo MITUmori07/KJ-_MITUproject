@@ -8,7 +8,7 @@ function b64urlEncode(input: ArrayBuffer | Uint8Array): string {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function b64urlToBytes(input: string): Uint8Array {
+function b64urlToBytes(input: string): Uint8Array<ArrayBuffer> {
   let s = input.replace(/-/g, '+').replace(/_/g, '/')
   while (s.length % 4) s += '='
   const bin = atob(s)
