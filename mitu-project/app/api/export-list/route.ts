@@ -1,9 +1,10 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export-list/
 // ファイル名: route.ts
-// バージョン: V1.2.0
+// バージョン: V1.2.1
 // 作成: 2026/05/27
-// 更新: V1.2.0 fix: 列幅/行高を実数値に / NO.右寄せ9pt / 小計・経費・合計を全2段化
+// 更新: V1.2.1 fix: thin罫線の型注釈エラー解消（as const）
+//       V1.2.0 fix: 列幅/行高を実数値に / NO.右寄せ9pt / 小計・経費・合計を全2段化
 // ============================================================
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
@@ -29,7 +30,7 @@ const FILL_HEADER  = 'FFD9D9D9'
 const FILL_EXPENSE = 'FFF2F2F2'
 const FILL_TOTAL   = 'FFE2EFDA'
 
-const HEADERS = ['NO.', '名称', '仕様', '数量', '単位', '単価', '金額', '備考']
+const HEADERS = ['No.', '名称', '仕様', '数量', '単位', '単価', '金額', '備考']
 
 type ExportRow = {
   name1?: string | null; name2?: string | null
@@ -57,7 +58,7 @@ const toNum = (v: unknown): number | null => {
   return isNaN(n) ? null : n
 }
 
-const thin: ExcelJS.Border = { style: 'thin' }
+const thin = { style: 'thin' as const }
 // 上段 = 上＋左右 / 下段 = 下＋左右（中間に横線なし）
 const BORDER_UPPER: Partial<ExcelJS.Borders> = { top: thin, left: thin, right: thin }
 const BORDER_LOWER: Partial<ExcelJS.Borders> = { bottom: thin, left: thin, right: thin }
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
       let itemNo = 1
       const firstRow = r
 
-      // 上段・下段ペアを書く共通処理
+      // 上段を書く共通処理
       const writeUpper = (vals: (ExcelJS.CellValue)[]) => {
         const row = ws.getRow(r); row.height = HEIGHT_DETAIL
         for (let c = 1; c <= 8; c++) {
@@ -184,7 +185,7 @@ export async function POST(req: NextRequest) {
           lower.getCell(c).font = { name: FONT, size: SIZE_DETAIL }
           lower.getCell(c).border = BORDER_LOWER
         }
-        // A: NO.（右寄せ・9pt）
+        // A: No.（数値・右寄せ・9pt）
         const cNo = lower.getCell(1)
         cNo.value = itemNo
         cNo.font = { name: FONT, size: SIZE_NO }
