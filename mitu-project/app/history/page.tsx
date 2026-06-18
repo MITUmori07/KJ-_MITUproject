@@ -119,7 +119,8 @@ export default function HistoryPage() {
   const [currentRowName, setCurrentRowName] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [rowHeight, setRowHeight] = useState<'small'|'large'>('large')
-  const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new   const toggleHighlight = (id: number) => {
+  const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new Set())
+  const toggleHighlight = (id: number) => {
     setHighlightedItems(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -447,7 +448,7 @@ export default function HistoryPage() {
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
-    const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
+  const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupTab('history')
     const section = sections.find(s => s.id === sectionId)
@@ -1344,7 +1345,6 @@ export default function HistoryPage() {
       {renderPopup()}
     </main>
   )
-
   const renderHistory = () => {
     return (
     <main className="min-h-screen bg-gray-50">
