@@ -1,8 +1,9 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V1.3.0
-// 更新: V1.3.0 feat: 一覧出力（1行2段明細 /api/export-list）ボタン・handleExportList/handleExportListHistory追加
+// バージョン: V2.0.0
+// 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
+//                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -21,7 +22,7 @@ type Estimate = {
   id: number; date: string; building: string
   title: string; staff: string; work_type: string
   version: string|null; base_id: number|null
-  is_archived: boolean|null
+  is_archived: boolean|null; input_by: string|null
 }
 type EstimateItem = {
   id: number; estimate_id: number; work_section: string; row_order: number
@@ -57,11 +58,11 @@ type Row = {
 }
 type Section = {
   id: string; name: string; rows: Row[]
-  keihiOverride: number|null   // 仮設工事費（手動上書き可）
-  unbanOverride: number|null   // 運搬費（手動上書き可）
-  nightOverride: number|null   // 夜間割増費（手動上書き可）
-  genbaOverride: number|null   // 現場経費（手動上書き可）
-  nightDeepRate: number        // 深夜割増率 0/5/10/.../40
+  keihiOverride: number|null
+  unbanOverride: number|null
+  nightOverride: number|null
+  genbaOverride: number|null
+  nightDeepRate: number
 }
 type Filters = { staff: string; building: string; workType: string; year: string }
 type CopyInfo = {
@@ -73,13 +74,9 @@ type CopyInfo = {
   currentVersion: string
   existingVersions: string[]
   overwriteId: number|null
+  input_by: string
 }
 type CopyMode = 'A' | 'B' | 'C'
-type Draft = {
-  id: number; file_key: string; date: string; building: string
-  title: string; staff: string; work_type: string
-  sections: Section[]; updated_at: string; source_title: string|null
-}
 
 const t = (str: string|null|undefined, len: number) => (str || '').slice(0, len)
 
@@ -103,18 +100,13 @@ export default function HistoryPage() {
   const [sections, setSections] = useState<Section[]>([])
   const [customSection, setCustomSection] = useState('')
   const [showSectionInput, setShowSectionInput] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [savedMsg, setSavedMsg] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
-  // ② モーダル
   const [copyMode, setCopyMode] = useState<CopyMode|null>(null)
   const [showCopyModeModal, setShowCopyModeModal] = useState(false)
-  const [showDraftListModal, setShowDraftListModal] = useState(false)
-  const [draftList, setDraftList] = useState<Draft[]>([])
-  // ポップアップ
   const [popup, setPopup] = useState<{ sectionId:string; rowId:string; workSection:string }|null>(null)
   const [popupTab, setPopupTab] = useState<'history'|'master'|'direct'>('history')
   const [popupItems, setPopupItems] = useState<PopupItem[]>([])
@@ -127,8 +119,7 @@ export default function HistoryPage() {
   const [currentRowName, setCurrentRowName] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [rowHeight, setRowHeight] = useState<'small'|'large'>('large')
-  const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new Set())
-  const toggleHighlight = (id: number) => {
+  const [highlightedItems, setHighlightedItems] = useState<Set<number>>(new   const toggleHighlight = (id: number) => {
     setHighlightedItems(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -164,7 +155,7 @@ export default function HistoryPage() {
   }
   const loadEstimates = async () => {
     const { data } = await supabase.from('estimates')
-      .select('id,date,building,title,staff,work_type,version,base_id,is_archived').order('date', { ascending: false })
+      .select('id,date,building,title,staff,work_type,version,base_id,is_archived,input_by').order('date', { ascending: false })
     const list = data || []
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
@@ -189,7 +180,6 @@ export default function HistoryPage() {
     if (f.length > 0) loadItems(f[0])
   }
 
-  // 新規作成
   const handleNewEstimate = () => {
     setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null, nightDeepRate: 0 }])
     setCopyInfo({
@@ -198,19 +188,17 @@ export default function HistoryPage() {
       source_estimate_id: null, source_title: '',
       originalTotal: 0,
       baseId: null, currentVersion: 'A', existingVersions: [],
-      overwriteId: null,
+      overwriteId: null, input_by: '',
     })
     setCopyMode(null)
     setShowEstimate(true)
   }
 
-  // コピーボタン → 直接4択モーダルへ
   const handleCopyButtonClick = () => {
     if (!selectedEstimate) return
     setShowCopyModeModal(true)
   }
 
-  // ② A/B/Cモードでコピー実行
   const handleCopyToEdit = async (mode: CopyMode) => {
     if (!selectedEstimate) return
     setShowCopyModeModal(false); setCopyMode(mode); setCopying(true)
@@ -248,19 +236,6 @@ export default function HistoryPage() {
       }
     })
     setSections(newSections); copyItemsRef.current = freshItems
-    const file_key = `copy_${selectedEstimate.id}_${Date.now()}`
-    const { data: draftData } = await supabase.from('drafts').insert({
-      file_key,
-      date: mode === 'A' ? selectedEstimate.date : '',
-      building: selectedEstimate.building,
-      title: mode === 'A' ? selectedEstimate.title : '',
-      staff: selectedEstimate.staff,
-      work_type: normalizeWorkType(selectedEstimate.work_type),
-      sections: newSections,
-      source_title: selectedEstimate.title,
-      updated_at: new Date().toISOString()
-    }).select('id').single()
-    // Aモード: 既存版を取得してnext versionを設定
     let baseId: number|null = null
     let existingVersions: string[] = []
     let currentVersion = 'A'
@@ -276,40 +251,17 @@ export default function HistoryPage() {
       building: buildingList.includes(selectedEstimate.building) ? selectedEstimate.building : buildingList[0] || '新宿FT',
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      draft_id: draftData ? draftData.id : null,
+      draft_id: null,
       date: mode === 'A' ? selectedEstimate.date : '',
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
-      source_title: selectedEstimate.title,
+      source_title: mode === 'A' ? selectedEstimate.title : '',
       originalTotal: 0,
       baseId, currentVersion, existingVersions,
-      overwriteId: selectedEstimate.id,
+      overwriteId: mode === 'A' ? selectedEstimate.id : null,
+      input_by: selectedEstimate.input_by || '',
     })
     setCopying(false); setShowEstimate(true); setTitleEditable(false)
-  }
-
-  const loadDrafts = async () => {
-    const { data } = await supabase.from('drafts').select('*').order('updated_at', { ascending: false })
-    setDraftList(data || [])
-  }
-  const handleDraftResume = (draft: Draft) => {
-    setSections(draft.sections)
-    setCopyInfo({
-      building: draft.building, staff: draft.staff, work_type: draft.work_type,
-      draft_id: draft.id, date: draft.date, title: draft.title,
-      source_estimate_id: null, source_title: draft.source_title || '',
-      originalTotal: 0,
-      baseId: null, currentVersion: 'A', existingVersions: [],
-      overwriteId: null,
-    })
-    setCopyMode(null)
-    setShowDraftListModal(false)
-    setShowEstimate(true)
-  }
-  const handleDeleteDraft = async (draftId: number) => {
-    if (!confirm('この途中保存を削除しますか？')) return
-    await supabase.from('drafts').delete().eq('id', draftId)
-    setDraftList(prev => prev.filter(d => d.id !== draftId))
   }
 
   const sortSectionNames = (names: string[]) => {
@@ -330,34 +282,101 @@ export default function HistoryPage() {
     }
   }
 
-  const saveDraft = async () => {
-    if (!copyInfo) return
-    setSaving(true)
+  // 既存グループの次の版文字を取得
+  const getNextVersion = async (baseId: number): Promise<string> => {
+    const { data } = await supabase.from('estimates').select('version').or(`base_id.eq.${baseId},id.eq.${baseId}`)
+    const n = (data || []).length
+    return String.fromCharCode(65 + n)
+  }
+
+  // 編集中(sections/copyInfo)を新版としてestimatesへ保存。新estimate idを返す
+  // 件名がコピー元と違う/新規 → 新グループのA版 / 件名が同じ → 既存グループの次の版
+  const saveAsNewVersion = async (): Promise<number|null> => {
+    if (!copyInfo) return null
     const currentTitle = titleInputRef.current?.value || copyInfo.title
-    const sectionsToSave = sections.map(s => ({ ...s, rows: s.rows.map(r => ({ ...r, showCandidates: false })) }))
-    const file_key = copyInfo.date && currentTitle
-      ? `${copyInfo.date}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}`
-      : `copy_未入力_${copyInfo.draft_id || Date.now()}`
-    if (copyInfo.draft_id === null) {
-      const { data } = await supabase.from('drafts').insert({
-        file_key, date: copyInfo.date, building: copyInfo.building,
-        title: currentTitle || 'コピー未入力', staff: copyInfo.staff,
-        work_type: copyInfo.work_type, sections: sectionsToSave,
-        source_title: copyInfo.source_title || null,
-        updated_at: new Date().toISOString()
-      }).select('id').single()
-      if (data) setCopyInfo(prev => prev ? { ...prev, draft_id: data.id, title: currentTitle } : prev)
-    } else {
-      await supabase.from('drafts').upsert({
-        id: copyInfo.draft_id, file_key,
-        date: copyInfo.date, building: copyInfo.building,
-        title: currentTitle || 'コピー未入力', staff: copyInfo.staff,
-        work_type: copyInfo.work_type, sections: sectionsToSave,
-        source_title: copyInfo.source_title || null,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' })
+    const titleChanged = currentTitle !== copyInfo.source_title
+    const isNewGroup = copyInfo.source_estimate_id == null || titleChanged
+    let version = 'A'
+    let baseId: number|null = null
+    if (!isNewGroup && copyInfo.baseId) {
+      baseId = copyInfo.baseId
+      version = await getNextVersion(baseId)
     }
-    setSaving(false); setSavedMsg('保存しました！'); setTimeout(() => setSavedMsg(''), 3000)
+    const { data: estData, error: estError } = await supabase.from('estimates').insert({
+      date: copyInfo.date, building: copyInfo.building,
+      title: currentTitle, staff: copyInfo.staff,
+      work_type: copyInfo.work_type, input_by: copyInfo.input_by || null,
+      version, base_id: baseId,
+    }).select('id').single()
+    if (estError || !estData) { alert('保存に失敗しました（estimates）'); return null }
+    const estimateId = estData.id
+    const allRows: object[] = []
+    sections.forEach(section => {
+      section.rows.forEach((row, idx) => {
+        allRows.push({
+          estimate_id: estimateId, work_section: section.name, row_order: idx + 1,
+          name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
+          spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
+          quantity: parseFloat(row.quantity) || 0, unit: row.unit,
+          unit_price: parseFloat(row.unit_price) || 0, amount: row.amount,
+          note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
+          source_flag: row.source_flag,
+          exclude_hakobi: row.excludeHakobi || false, night_work: row.nightWork || false,
+          labor_rate: parseFloat(row.laborRate) || 60, night_deep_rate: parseFloat(row.nightDeepRate) || 0,
+        })
+      })
+    })
+    const { error: itemsError } = await supabase.from('estimate_items').insert(allRows)
+    if (itemsError) { alert('保存に失敗しました（estimate_items）'); return null }
+    const expenseRows: object[] = []
+    sections.forEach(section => {
+      const sub = subtotal(section)
+      const ws = `経費_${section.name}`
+      const exp = [
+        { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
+        { name1: '仮設工事費', amount: section.name === '特殊仮設工事' ? 0 : getKeihiCost(section), quantity: 1, unit: '式' },
+        { name1: '運搬費', amount: getHakobiCost(section), quantity: 1, unit: '式' },
+        { name1: '深夜作業割増', amount: getNightCost(section), quantity: 1, unit: '式', night_deep_rate: section.nightDeepRate },
+        { name1: '現場経費', amount: getGenbaCost(section), quantity: 1, unit: '式' },
+      ]
+      exp.forEach((e, idx) => {
+        expenseRows.push({
+          estimate_id: estimateId, work_section: ws, row_order: idx + 1,
+          name1: e.name1, quantity: e.quantity, unit: e.unit, unit_price: 0, amount: e.amount,
+          night_deep_rate: (e as any).night_deep_rate ?? 0,
+        })
+      })
+    })
+    await supabase.from('estimate_items').insert(expenseRows)
+    if (isNewGroup) {
+      await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
+    }
+    return estimateId
+  }
+
+  // 閲覧中の見積(selectedEstimate/items)を複製して新版として保存
+  const dupHistoryAsNewVersion = async (): Promise<void> => {
+    if (!selectedEstimate) return
+    const baseId = selectedEstimate.base_id || selectedEstimate.id
+    const version = await getNextVersion(baseId)
+    const { data: estData } = await supabase.from('estimates').insert({
+      date: selectedEstimate.date, building: selectedEstimate.building,
+      title: selectedEstimate.title, staff: selectedEstimate.staff,
+      work_type: selectedEstimate.work_type, input_by: selectedEstimate.input_by,
+      version, base_id: baseId,
+    }).select('id').single()
+    if (!estData) return
+    const newId = estData.id
+    const newItems = items.map(it => ({
+      estimate_id: newId, work_section: it.work_section, row_order: it.row_order,
+      name1: it.name1, name2: it.name2, name3: it.name3,
+      spec1: it.spec1, spec2: it.spec2, spec3: it.spec3,
+      quantity: it.quantity, unit: it.unit, unit_price: it.unit_price, amount: it.amount,
+      note1: it.note1, note2: it.note2, note3: it.note3,
+      exclude_hakobi: it.exclude_hakobi, night_work: it.night_work,
+      labor_rate: it.labor_rate, night_deep_rate: it.night_deep_rate,
+    }))
+    await supabase.from('estimate_items').insert(newItems)
   }
 
   const handleConfirm = async () => {
@@ -366,92 +385,12 @@ export default function HistoryPage() {
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     if (!currentTitle) { alert('件名を入力してください'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
-    if (!confirm(`「${currentTitle}」を確定して見積一覧に保存しますか？\n確定後は版管理（B版・C版）で修正できます。`)) return
+    if (!confirm(`「${currentTitle}」を確定して見積一覧に保存しますか？`)) return
     setConfirming(true)
-
-    // 通常パス（新版として保存）
-    // estimates INSERT
-    const { data: estData, error: estError } = await supabase.from('estimates').insert({
-      date: copyInfo.date, building: copyInfo.building,
-      title: currentTitle, staff: copyInfo.staff,
-      work_type: copyInfo.work_type,
-      version: copyInfo.currentVersion || 'A',
-      base_id: copyInfo.baseId || null,
-    }).select('id').single()
-    if (estError || !estData) {
-      alert('確定に失敗しました（estimates）'); setConfirming(false); return
-    }
-    const estimateId = estData.id
-    // estimate_items INSERT（通常行・source_flag/row_order付き）
-    const allRows: object[] = []
-    sections.forEach(section => {
-      section.rows.forEach((row, idx) => {
-        allRows.push({
-          estimate_id: estimateId,
-          work_section: section.name,
-          row_order: idx + 1,
-          name1: row.name1, name2: row.name2 || null, name3: row.name3 || null,
-          spec1: row.spec1 || null, spec2: row.spec2 || null, spec3: row.spec3 || null,
-          quantity: parseFloat(row.quantity) || 0,
-          unit: row.unit,
-          unit_price: parseFloat(row.unit_price) || 0,
-          amount: row.amount,
-          note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
-          source_flag: row.source_flag,
-          exclude_hakobi: row.excludeHakobi || false,
-          night_work: row.nightWork || false,
-          labor_rate: parseFloat(row.laborRate) || 60,
-          night_deep_rate: parseFloat(row.nightDeepRate) || 0,
-        })
-      })
-    })
-    const { error: itemsError } = await supabase.from('estimate_items').insert(allRows)
-    if (itemsError) {
-      alert('確定に失敗しました（estimate_items）'); setConfirming(false); return
-    }
-    // 経費行 INSERT
-    const expenseRows: object[] = []
-    sections.forEach(section => {
-      const sub = subtotal(section)
-      const keihiVal = section.name === '特殊仮設工事' ? 0 : getKeihiCost(section)
-      const unbanVal = getHakobiCost(section)
-      const nightVal = getNightCost(section)
-      const genbaVal = getGenbaCost(section)
-      const ws = `経費_${section.name}`
-      const expItems = [
-        { name1: '小計', amount: Math.round(sub), quantity: 0, unit: '' },
-        { name1: '仮設工事費', amount: keihiVal, quantity: 1, unit: '式' },
-        { name1: '運搬費', amount: unbanVal, quantity: 1, unit: '式' },
-        { name1: '深夜作業割増', amount: nightVal, quantity: 1, unit: '式', night_deep_rate: section.nightDeepRate },
-        { name1: '現場経費', amount: genbaVal, quantity: 1, unit: '式' },
-      ]
-      expItems.forEach((e, idx) => {
-        expenseRows.push({
-          estimate_id: estimateId,
-          work_section: ws,
-          row_order: idx + 1,
-          name1: e.name1, quantity: e.quantity,
-          unit: e.unit, unit_price: 0,
-          amount: e.amount,
-          night_deep_rate: (e as any).night_deep_rate ?? 0,
-        })
-      })
-    })
-    await supabase.from('estimate_items').insert(expenseRows)
-    // 初回確定（base_idなし）の場合、base_id=自分のIDで更新
-    if (!copyInfo.baseId) {
-      await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
-    }
-    // draftsから削除（draft_idがある場合）
-    if (copyInfo.draft_id !== null) {
-      await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
-    }
+    const newId = await saveAsNewVersion()
     setConfirming(false)
-    // ① 先にExcel確認（copyInfo・sectionsがまだ生きている）
-    if (confirm('確定しました！\nExcel出力しますか？')) {
-      await handleExport()
-    }
-    // ② その後リセットしてhistory画面へ
+    if (!newId) return
+    if (confirm('確定しました！\nExcel出力しますか？')) { await handleExport(false) }
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
@@ -466,6 +405,7 @@ export default function HistoryPage() {
     const { error: upError } = await supabase.from('estimates').update({
       date: copyInfo.date, building: copyInfo.building,
       title: currentTitle, staff: copyInfo.staff, work_type: copyInfo.work_type,
+      input_by: copyInfo.input_by || null,
     }).eq('id', copyInfo.overwriteId)
     if (upError) { alert('上書きに失敗しました'); setConfirming(false); return }
     await supabase.from('estimate_items').delete().eq('estimate_id', copyInfo.overwriteId)
@@ -480,10 +420,8 @@ export default function HistoryPage() {
           unit_price: parseFloat(row.unit_price) || 0, amount: row.amount,
           note1: row.note1 || null, note2: row.note2 || null, note3: row.note3 || null,
           source_flag: row.source_flag,
-          exclude_hakobi: row.excludeHakobi || false,
-          night_work: row.nightWork || false,
-          labor_rate: parseFloat(row.laborRate) || 60,
-          night_deep_rate: parseFloat(row.nightDeepRate) || 0,
+          exclude_hakobi: row.excludeHakobi || false, night_work: row.nightWork || false,
+          labor_rate: parseFloat(row.laborRate) || 60, night_deep_rate: parseFloat(row.nightDeepRate) || 0,
         })
       })
     })
@@ -504,14 +442,12 @@ export default function HistoryPage() {
       })
     })
     await supabase.from('estimate_items').insert(expRows)
-    if (copyInfo.draft_id !== null) await supabase.from('drafts').delete().eq('id', copyInfo.draft_id)
     setConfirming(false)
-    if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport()
+    if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport(false)
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
-
-  const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
+    const openPopup = (sectionId: string, rowId: string, sectionName: string) => {
     setPopup({ sectionId, rowId, workSection: sectionName })
     setPopupTab('history')
     const section = sections.find(s => s.id === sectionId)
@@ -545,21 +481,9 @@ export default function HistoryPage() {
       }))
       setPopup(null); setShowApplyModal(false); setPendingApply(null)
     }
-    const doInsert = () => {
-      const row = { ...newRow(), ...newData, amount: 0 }
-      setSections(prev => prev.map(s => {
-        if (s.id !== sectionId) return s
-        const idx = s.rows.findIndex(r => r.id === rowId)
-        const rows = [...s.rows]; rows.splice(idx + 1, 0, row)
-        return { ...s, rows }
-      }))
-      setPopup(null); setShowApplyModal(false); setPendingApply(null)
-    }
     if (currentRowName) {
       setPendingApply({ newData, sectionId, rowId })
       setShowApplyModal(true)
-      // doOverwrite/doInsertはモーダルから呼ぶ
-      // ここでは一旦保留
       return
     } else { doOverwrite() }
   }
@@ -678,15 +602,11 @@ export default function HistoryPage() {
           let note1 = r.note1, note2 = r.note2, note3 = r.note3
           let laborRate = r.laborRate
           if (newVal) {
-            // ON: 空いている欄に記入
             if (!note1) note1 = NOTE_TEXT
             else if (!note2) note2 = NOTE_TEXT
             else if (!note3) note3 = NOTE_TEXT
-            // 全部埋まっていたら何もしない
-            // 工事区分に応じてlaborRateを自動設定
             laborRate = s.name === '解体工事' ? '80' : '50'
           } else {
-            // OFF: 夜間工事割増を削除
             if (note1 === NOTE_TEXT) note1 = ''
             if (note2 === NOTE_TEXT) note2 = ''
             if (note3 === NOTE_TEXT) note3 = ''
@@ -724,16 +644,13 @@ export default function HistoryPage() {
     return section.keihiOverride !== null ? section.keihiOverride :
       Math.floor(subtotal(section) * 0.07 / 10) * 10
   }
-  // 税抜計 = 小計 + 仮設 + 運搬 + 夜間
   const getZeinukiTotal = (section: Section) =>
     subtotal(section) + getKeihiCost(section) + getHakobiCost(section) + getNightCost(section)
-  // 工事の計 = 税抜計 × 110% → 100円単位切り捨て
   const getSectionTotal = (section: Section) => {
     const zeinuki = getZeinukiTotal(section)
     if (section.genbaOverride !== null) return zeinuki + section.genbaOverride
     return Math.floor(zeinuki * 1.10 / 1000) * 1000
   }
-  // 現場経費 = 工事の計 - 税抜計（引き算・小数点誤差なし）
   const getGenbaCost = (section: Section) => section.genbaOverride !== null ? section.genbaOverride :
     getSectionTotal(section) - getZeinukiTotal(section)
   const grandTotal = sections.reduce((sum, s) => sum + getSectionTotal(s), 0)
@@ -744,22 +661,17 @@ export default function HistoryPage() {
     }))
   }
 
-  const handleExport = async () => {
+  const handleExport = async (saveVersion: boolean = true) => {
     if (!copyInfo) return
     if (copying) { alert('データ読み込み中です'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     if (!currentTitle) { alert('件名を入力してください'); return }
-    // 経費計算値をsectionsに含めてAPIに渡す
+    if (saveVersion) { await saveAsNewVersion() }
     const sectionsWithExpenses = sections.map(s => ({
-      ...s,
-      keihi: getKeihiCost(s),
-      unban: getHakobiCost(s),
-      night: getNightCost(s),
-      genba: getGenbaCost(s),
-      sectionTotal: getSectionTotal(s),
-      nightDeepRate: s.nightDeepRate,
+      ...s, keihi: getKeihiCost(s), unban: getHakobiCost(s), night: getNightCost(s),
+      genba: getGenbaCost(s), sectionTotal: getSectionTotal(s), nightDeepRate: s.nightDeepRate,
     }))
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -771,24 +683,20 @@ export default function HistoryPage() {
     a.href = url
     a.download = `${copyInfo.currentVersion || 'A'}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
     a.click()
+    if (saveVersion) await loadEstimates()
   }
 
-  // ★ 追加: 1行2段明細の一覧出力（コピー編集エリア用 / handleExportと同じ組み立て）
-  const handleExportList = async () => {
+  const handleExportList = async (saveVersion: boolean = true) => {
     if (!copyInfo) return
     if (copying) { alert('データ読み込み中です'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     if (!currentTitle) { alert('件名を入力してください'); return }
+    if (saveVersion) { await saveAsNewVersion() }
     const sectionsWithExpenses = sections.map(s => ({
-      ...s,
-      keihi: getKeihiCost(s),
-      unban: getHakobiCost(s),
-      night: getNightCost(s),
-      genba: getGenbaCost(s),
-      sectionTotal: getSectionTotal(s),
-      nightDeepRate: s.nightDeepRate,
+      ...s, keihi: getKeihiCost(s), unban: getHakobiCost(s), night: getNightCost(s),
+      genba: getGenbaCost(s), sectionTotal: getSectionTotal(s), nightDeepRate: s.nightDeepRate,
     }))
     const res = await fetch('/api/export-list', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -800,6 +708,7 @@ export default function HistoryPage() {
     a.href = url
     a.download = `${copyInfo.currentVersion || 'A'}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}_一覧.xlsx`
     a.click()
+    if (saveVersion) await loadEstimates()
   }
 
   const filteredEstimates = estimates.filter(e => {
@@ -809,7 +718,6 @@ export default function HistoryPage() {
     if (filters.year && !e.date.startsWith(filters.year)) return false
     return true
   })
-  // 同じbase_idグループは最新版（id最大）のみ表示
   const groupedEstimates = filteredEstimates.filter(e => {
     const baseId = e.base_id || e.id
     const group = filteredEstimates.filter(x => (x.base_id || x.id) === baseId)
@@ -823,7 +731,6 @@ export default function HistoryPage() {
   const SECTION_ORDER = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事']
   const normalItems = items.filter(i => !i.work_section.startsWith('経費_'))
   const sectionNames = [...new Set(normalItems.map(i => i.work_section))].sort((a, b) => {
-    // 特殊仮設工事・特殊仮設工事の増減は常に最後
     const aIsLast = a.startsWith('特殊仮設工事')
     const bIsLast = b.startsWith('特殊仮設工事')
     if (aIsLast && !bIsLast) return 1
@@ -842,43 +749,41 @@ export default function HistoryPage() {
   }
   const historyGrandTotal = sectionNames.reduce((sum, name) => sum + getSectionData(name).total, 0)
 
+  const buildHistoryExportSections = () => sectionNames.map(name => {
+    const { sectionItems, expenses, subtotal: sub } = getSectionData(name)
+    const expenseRows = expenses.filter(e => e.name1 !== '小計')
+    const getExpenseAmount = (expName: string, altName?: string) => {
+      const exp = expenseRows.find(e => e.name1 === expName || (altName && e.name1 === altName))
+      return exp ? (exp.amount || 0) : 0
+    }
+    const keihi = getExpenseAmount('仮設工事費')
+    const unban = getExpenseAmount('運搬費')
+    const night = getExpenseAmount('深夜作業割増', '深夜休日作業割増')
+    const genba = getExpenseAmount('現場経費', '現場雑費')
+    const zeinuki = sub + keihi + unban + night
+    const sectionTotal = Math.floor(zeinuki * 1.10 / 100) * 100
+    const genbaCalc = sectionTotal - zeinuki
+    return {
+      id: name, name,
+      rows: sectionItems.map(item => ({
+        id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
+        spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
+        quantity: String(item.quantity), unit: item.unit||'',
+        unit_price: String(item.unit_price), amount: item.amount,
+        note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
+        excludeHakobi: item.exclude_hakobi || false, nightWork: item.night_work || false,
+        laborRate: String(item.labor_rate ?? 60), nightDeepRate: String(item.night_deep_rate ?? 0),
+        candidates: [], showCandidates: false,
+      })),
+      keihi, unban, night,
+      genba: genba > 0 ? genba : genbaCalc,
+      sectionTotal: genba > 0 ? sub + keihi + unban + night + genba : sectionTotal,
+    }
+  })
+
   const handleExportHistory = async () => {
     if (!selectedEstimate) return
-    const exportSections = sectionNames.map(name => {
-      const { sectionItems, expenses, subtotal: sub } = getSectionData(name)
-      // 小計行を除外して経費行のみ取得
-      const expenseRows = expenses.filter(e => e.name1 !== '小計')
-      const getExpenseAmount = (expName: string, altName?: string) => {
-        const exp = expenseRows.find(e => e.name1 === expName || (altName && e.name1 === altName))
-        return exp ? (exp.amount || 0) : 0
-      }
-      const keihi = getExpenseAmount('仮設工事費')
-      const unban = getExpenseAmount('運搬費')
-      const night = getExpenseAmount('深夜作業割増', '深夜休日作業割増')
-      const genba = getExpenseAmount('現場経費', '現場雑費')
-      // 工事の計 = 小計 + 仮設 + 運搬 + 夜間 + 現場（100円単位切り捨て）
-      const zeinuki = sub + keihi + unban + night
-      const sectionTotal = Math.floor(zeinuki * 1.10 / 100) * 100
-      const genbaCalc = sectionTotal - zeinuki
-      return {
-        id: name, name,
-        rows: sectionItems.map(item => ({
-          id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
-          spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
-          quantity: String(item.quantity), unit: item.unit||'',
-          unit_price: String(item.unit_price), amount: item.amount,
-          note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
-          excludeHakobi: item.exclude_hakobi || false,
-          nightWork: item.night_work || false,
-          laborRate: String(item.labor_rate ?? 60),
-          nightDeepRate: String(item.night_deep_rate ?? 0),
-          candidates: [], showCandidates: false,
-        })),
-        keihi, unban, night,
-        genba: genba > 0 ? genba : genbaCalc,
-        sectionTotal: genba > 0 ? sub + keihi + unban + night + genba : sectionTotal,
-      }
-    })
+    const exportSections = buildHistoryExportSections()
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: selectedEstimate.date, building: selectedEstimate.building, title: selectedEstimate.title, staff: selectedEstimate.staff, work_type: selectedEstimate.work_type, sections: exportSections })
@@ -889,44 +794,13 @@ export default function HistoryPage() {
     a.href = url
     a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}.xlsx`
     a.click()
+    await dupHistoryAsNewVersion()
+    await loadEstimates()
   }
 
-  // ★ 追加: 1行2段明細の一覧出力（閲覧画面用 / handleExportHistoryと同じ組み立て）
   const handleExportListHistory = async () => {
     if (!selectedEstimate) return
-    const exportSections = sectionNames.map(name => {
-      const { sectionItems, expenses, subtotal: sub } = getSectionData(name)
-      const expenseRows = expenses.filter(e => e.name1 !== '小計')
-      const getExpenseAmount = (expName: string, altName?: string) => {
-        const exp = expenseRows.find(e => e.name1 === expName || (altName && e.name1 === altName))
-        return exp ? (exp.amount || 0) : 0
-      }
-      const keihi = getExpenseAmount('仮設工事費')
-      const unban = getExpenseAmount('運搬費')
-      const night = getExpenseAmount('深夜作業割増', '深夜休日作業割増')
-      const genba = getExpenseAmount('現場経費', '現場雑費')
-      const zeinuki = sub + keihi + unban + night
-      const sectionTotal = Math.floor(zeinuki * 1.10 / 100) * 100
-      const genbaCalc = sectionTotal - zeinuki
-      return {
-        id: name, name,
-        rows: sectionItems.map(item => ({
-          id: String(item.id), name1: item.name1||'', name2: item.name2||'', name3: item.name3||'',
-          spec1: item.spec1||'', spec2: item.spec2||'', spec3: item.spec3||'',
-          quantity: String(item.quantity), unit: item.unit||'',
-          unit_price: String(item.unit_price), amount: item.amount,
-          note1: item.note1||'', note2: item.note2||'', note3: item.note3||'',
-          excludeHakobi: item.exclude_hakobi || false,
-          nightWork: item.night_work || false,
-          laborRate: String(item.labor_rate ?? 60),
-          nightDeepRate: String(item.night_deep_rate ?? 0),
-          candidates: [], showCandidates: false,
-        })),
-        keihi, unban, night,
-        genba: genba > 0 ? genba : genbaCalc,
-        sectionTotal: genba > 0 ? sub + keihi + unban + night + genba : sectionTotal,
-      }
-    })
+    const exportSections = buildHistoryExportSections()
     const res = await fetch('/api/export-list', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: selectedEstimate.date, building: selectedEstimate.building, title: selectedEstimate.title, staff: selectedEstimate.staff, work_type: selectedEstimate.work_type, sections: exportSections })
@@ -937,11 +811,12 @@ export default function HistoryPage() {
     a.href = url
     a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}_一覧.xlsx`
     a.click()
+    await dupHistoryAsNewVersion()
+    await loadEstimates()
   }
 
   const colWidths = { no:'3%', name:'25%', spec:'22%', qty:'6%', unit:'4%', price:'10%', amount:'11%', note:'15%', hl:'4%' }
 
-  // ② モードバッジ
   const modeBadge = (mode: CopyMode|null) => {
     if (!mode) return null
     const map = {
@@ -952,8 +827,6 @@ export default function HistoryPage() {
     const m = map[mode]
     return <span className={`${m.color} text-white text-xs px-2 py-0.5 rounded`}>{m.label}</span>
   }
-
-  // ==================== ② コピーモード選択モーダル ====================
   const renderCopyModeModal = () => !showCopyModeModal ? null : (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm">
@@ -965,7 +838,7 @@ export default function HistoryPage() {
           <button onClick={() => handleCopyToEdit('A')}
             className="w-full text-left border-2 border-red-200 rounded-lg px-4 py-3 hover:bg-red-50 transition-colors">
             <div className="font-bold text-red-700 text-sm">上書き編集</div>
-            <div className="text-xs text-gray-500 mt-1">件名・数量そのまま。上書き保存 or 新版として確定できます。</div>
+            <div className="text-xs text-gray-500 mt-1">件名・数量そのまま。件名を変えて確定すると新しい件名のA版になります。</div>
           </button>
           <button onClick={() => handleCopyToEdit('B')}
             className="w-full text-left border-2 border-blue-200 rounded-lg px-4 py-3 hover:bg-blue-50 transition-colors">
@@ -981,47 +854,6 @@ export default function HistoryPage() {
     </div>
   )
 
-  // ==================== D: 途中保存一覧モーダル ====================
-  const renderDraftListModal = () => !showDraftListModal ? null : (
-    <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="text-base font-bold text-gray-800">途中保存から再開</h2>
-          <button onClick={() => setShowDraftListModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-          {draftList.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">途中保存はありません</div>
-          ) : draftList.map(draft => (
-            <div key={draft.id} className="border rounded-lg px-4 py-3 flex justify-between items-center hover:bg-gray-50">
-              <div className="flex-1 cursor-pointer" onClick={() => handleDraftResume(draft)}>
-                <div className="font-medium text-sm text-gray-800">{draft.title || '（件名未入力）'}</div>
-                {draft.source_title && (
-                  <div className="text-xs text-blue-500 mt-0.5">コピー元: {draft.source_title}</div>
-                )}
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {draft.date || '日付未入力'} / {draft.building} / {draft.staff} / {draft.work_type}
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  保存: {new Date(draft.updated_at).toLocaleString('ja-JP')}
-                </div>
-              </div>
-              <button onClick={() => handleDeleteDraft(draft.id)}
-                className="ml-2 text-red-400 hover:text-red-600 text-xs px-2 py-1 border border-red-200 rounded">
-                削除
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="px-4 pb-4 border-t pt-3">
-          <button onClick={() => setShowDraftListModal(false)}
-            className="w-full py-2 text-sm text-gray-500 hover:text-gray-700 border rounded-lg">キャンセル</button>
-        </div>
-      </div>
-    </div>
-  )
-
-  // ==================== 3択モーダル（書き換え・下追加・キャンセル）====================
   const renderApplyModal = () => !showApplyModal || !pendingApply ? null : (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-[60] flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xs">
@@ -1071,7 +903,6 @@ export default function HistoryPage() {
     </div>
   )
 
-  // ==================== ポップアップ JSX ====================
   const renderPopup = () => !popup ? null : (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
@@ -1086,7 +917,6 @@ export default function HistoryPage() {
           <button onClick={() => handleTabChange('master')}
             className={`flex-1 py-2 text-sm font-medium ${popupTab==='master' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}>
             単価マスタ</button>
-
         </div>
         {popupTab === 'master' && (
           <div className="px-3 pt-2 flex items-center gap-2 flex-wrap">
@@ -1183,11 +1013,9 @@ export default function HistoryPage() {
     </div>
   )
 
-  // ==================== コピー編集エリア JSX ====================
   const renderEstimate = () => (
     <main className="min-h-screen bg-gray-50">
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
-        {/* 1行目 */}
         <div className="flex items-center gap-2 px-2 py-1 flex-wrap">
           <button onClick={() => { setShowEstimate(false); setSections([]); setCopyInfo(null); setCopyMode(null) }}
             className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded font-medium text-xs"
@@ -1196,7 +1024,6 @@ export default function HistoryPage() {
           {modeBadge(copyMode)}
           <span className="ml-auto text-xs text-gray-400">{VERSION}</span>
         </div>
-        {/* 2行目: 案件情報 */}
         <div className="px-2 pb-1 flex flex-wrap gap-1 items-end border-t">
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">日付<span className="text-red-400">*</span></label>
@@ -1222,32 +1049,21 @@ export default function HistoryPage() {
             <div className="flex items-center gap-1">
               <input type="text"
                 ref={titleInputRef}
-                key={`title-${copyInfo!.source_estimate_id || 'new'}-${copyInfo!.draft_id || ''}`}
+                key={`title-${copyInfo!.source_estimate_id || 'new'}`}
                 className={`border rounded px-1 py-0.5 text-xs flex-1 ${copyInfo!.source_estimate_id && !titleEditable ? 'bg-gray-100 text-gray-600' : 'bg-white'}`}
                 defaultValue={copyInfo!.title} placeholder="件名を入力"
                 readOnly={!!copyInfo!.source_estimate_id && !titleEditable} />
-              {copyInfo!.source_estimate_id && (
-                <div className="flex gap-0.5">
-                  {Array.from({ length: copyInfo!.existingVersions.length + 1 }, (_, i) => String.fromCharCode(65 + i)).map(v => {
-                    const isSaved = copyInfo!.existingVersions.includes(v)
-                    const isCurrent = copyInfo!.currentVersion === v
-                    return (
-                      <button key={v}
-                        onClick={() => !isSaved && setCopyInfo({...copyInfo!, currentVersion: v})}
-                        className={`w-6 h-6 rounded text-xs font-bold ${isSaved ? 'bg-blue-600 text-white' : isCurrent ? 'bg-blue-200 text-blue-800' : 'bg-gray-100 text-gray-400'}`}
-                        title={isSaved ? `版${v}：保存済み` : `版${v}として確定`}>
-                        {v}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
             </div>
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">担当者</label>
             <input type="text" className="border rounded px-1 py-0.5 text-xs w-16" value={copyInfo!.staff}
               onChange={e => setCopyInfo({...copyInfo!, staff: e.target.value})} />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="text-xs text-gray-400">入力者</label>
+            <input type="text" className="border rounded px-1 py-0.5 text-xs w-16" value={copyInfo!.input_by}
+              placeholder="入力者" onChange={e => setCopyInfo({...copyInfo!, input_by: e.target.value})} />
           </div>
           <div className="flex flex-col gap-0.5">
             <label className="text-xs text-gray-400">種別</label>
@@ -1257,7 +1073,6 @@ export default function HistoryPage() {
             </select>
           </div>
         </div>
-        {/* 3行目: 合計・ボタン */}
         <div className="px-2 py-1 flex items-center gap-2 border-t">
           <span className="text-sm font-bold text-gray-800">
             {copyInfo!.originalTotal > 0
@@ -1272,7 +1087,6 @@ export default function HistoryPage() {
               title="行の高さを切り替え">
               {rowHeight === 'large' ? '小' : '大'}
             </button>
-            {/* 2画面トグル */}
             {is2Pane ? (
               <button onClick={() => setIs2Pane(false)}
                 className="bg-gray-500 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs font-bold"
@@ -1282,10 +1096,6 @@ export default function HistoryPage() {
                 className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold"
                 title="2画面モードに切り替え">2画面</button>
             )}
-            <button onClick={saveDraft} disabled={saving}
-              className="bg-yellow-500 text-white px-3 py-1 rounded text-xs font-medium hover:bg-yellow-600 disabled:opacity-50"
-              title="作業中のデータを一時保存。日付・件名なしでも保存可">
-              {saving ? '保存中...' : '保存'}</button>
             <button onClick={handleConfirm} disabled={confirming}
               className="bg-red-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50"
               title="見積を完成させて一覧に登録します。日付・件名が必要。">
@@ -1296,13 +1106,12 @@ export default function HistoryPage() {
                 title="現在の版を直接上書きします（元データは消えます）">
                 上書き</button>
             )}
-            <button onClick={handleExport}
+            <button onClick={() => handleExport()}
               className="bg-green-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-green-700"
-              title="Excel出力（日付・件名必須）">Excel出力</button>
-            {/* ★ 追加: 一覧出力 */}
-            <button onClick={handleExportList}
+              title="Excel出力（出力時に新版保存）">Excel出力</button>
+            <button onClick={() => handleExportList()}
               className="bg-emerald-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-emerald-700"
-              title="1行2段明細の一覧Excelを出力（日付・件名必須）">一覧出力</button>
+              title="1行2段の一覧Excelを出力（出力時に新版保存）">一覧出力</button>
           </div>
         </div>
       </div>
@@ -1375,7 +1184,6 @@ export default function HistoryPage() {
                               onChange={e => updateRow(section.id, row.id, f, e.target.value)} />
                           ))}
                         </td>
-                        {/* ⑤ 数量: onBlurでtoFixed(1) */}
                         <td className="p-1">
                           <input className="w-full border rounded px-2 py-1 text-right"
                             value={row.quantity} type="number" step="0.1"
@@ -1406,7 +1214,6 @@ export default function HistoryPage() {
                               onChange={e => updateRow(section.id, row.id, f, e.target.value)} />
                           ))}
                         </td>
-                        {/* ④ 夜搬列 */}
                         <td className="p-1 align-top">
                           <div className="flex flex-col gap-1 items-center pt-1">
                             <button onClick={() => toggleRowBool(section.id, row.id, 'nightWork')}
@@ -1443,7 +1250,6 @@ export default function HistoryPage() {
                   <div className="text-sm font-medium">小計: {subtotal(section).toLocaleString()} 円</div>
                 </div>
               </div>
-              {/* 経費エリア（6行） */}
               <div className="border border-t-0 rounded-b bg-gray-50">
                 {(() => {
                   const sub = subtotal(section)
@@ -1451,7 +1257,6 @@ export default function HistoryPage() {
                   const unban = getHakobiCost(section)
                   const night = getNightCost(section)
                   const zeinuki = sub + keihi + unban + night
-                  const genba = getGenbaCost(section)
                   const total = getSectionTotal(section)
                   const hasNightRows = section.rows.some(r => r.nightWork)
                   return [
@@ -1540,7 +1345,6 @@ export default function HistoryPage() {
     </main>
   )
 
-  // ==================== history画面 JSX ====================
   const renderHistory = () => {
     return (
     <main className="min-h-screen bg-gray-50">
@@ -1598,26 +1402,21 @@ export default function HistoryPage() {
         {!is2Pane && (
           <button onClick={handleExportHistory}
             className="bg-green-600 text-white px-2 py-0.5 rounded text-xs hover:bg-green-700 whitespace-nowrap"
-            title="Excel出力">Excel</button>
+            title="Excel出力（出力時に新版保存）">Excel</button>
         )}
-        {/* ★ 追加: 一覧出力（閲覧画面） */}
         {!is2Pane && (
           <button onClick={handleExportListHistory}
             className="bg-emerald-600 text-white px-2 py-0.5 rounded text-xs hover:bg-emerald-700 whitespace-nowrap"
-            title="1行2段明細の一覧Excelを出力">一覧</button>
+            title="一覧Excelを出力（出力時に新版保存）">一覧</button>
         )}
         <button onClick={handleNewEstimate}
           className="bg-teal-600 text-white px-2 py-0.5 rounded text-xs hover:bg-teal-700 whitespace-nowrap"
           title="新規で明細を作成">新規作成</button>
-        {/* ② コピーボタン → 分岐モーダルへ */}
         <button onClick={handleCopyButtonClick} disabled={copying || !selectedEstimate || loading}
           className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:opacity-40 whitespace-nowrap"
           title="コピー方法を選択して編集">
           {copying || loading ? '読込中...' : is2Pane ? '→編集' : 'コピー編集'}
         </button>
-        <button onClick={() => { loadDrafts(); setShowDraftListModal(true) }}
-          className="bg-amber-500 text-white px-2 py-0.5 rounded text-xs hover:bg-amber-600 whitespace-nowrap"
-          title="途中保存した下書きから再開">下書き</button>
         <a href="/import"
           className="bg-purple-600 text-white px-2 py-0.5 rounded text-xs hover:bg-purple-700 whitespace-nowrap"
           title="Excelファイルを取り込む">取り込み</a>
@@ -1648,7 +1447,9 @@ export default function HistoryPage() {
         <div className="bg-blue-50 border-b px-4 py-1 text-xs text-gray-700 flex gap-4 flex-wrap items-center">
           <span>{selectedEstimate.date}</span><span>{selectedEstimate.building}</span>
           <span className="font-medium">{selectedEstimate.title}</span>
-          <span>{selectedEstimate.staff}</span><span>{selectedEstimate.work_type}</span>
+          <span>担当: {selectedEstimate.staff}</span>
+          {selectedEstimate.input_by && <span>入力: {selectedEstimate.input_by}</span>}
+          <span>{selectedEstimate.work_type}</span>
           {selectedEstimate.version && (
             <span className="bg-blue-600 text-white px-2 py-0.5 rounded font-bold">版{selectedEstimate.version}</span>
           )}
@@ -1789,8 +1590,7 @@ export default function HistoryPage() {
     )
   }
 
-  // ==================== ① 2画面 or 通常レイアウト ====================
-  const modals = (<>{renderCopyModeModal()}{renderDraftListModal()}{renderApplyModal()}</>)
+  const modals = (<>{renderCopyModeModal()}{renderApplyModal()}</>)
 
   const renderMain = () => {
     if (!is2Pane && showEstimate && copyInfo) return (<>{renderEstimate()}{modals}</>)
