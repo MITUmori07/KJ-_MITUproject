@@ -1,9 +1,10 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.1.4
-// 更新: 2026/05/27
+// バージョン: V6.1.5
+// 更新: 2026/09/08
 // 変更: V6.1.3 fix: N列=H×L数式・P列deepRate・現場経費/総計H数式
+// 変更: V6.1.5 chore: 明細・小計・空行の行の高さを37.5→40.0（定数HEIGHT_ROWに集約）
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -12,6 +13,7 @@ import ExcelJS from 'exceljs'
 import { VERSION } from '@/lib/version'
 
 const FONT = 'BIZ UDゴシック'
+const HEIGHT_ROW = 40.0   // 明細・小計・空行の行の高さ（ここを変えれば全体に反映）
 const DATA_ROWS = 25
 const SUBTOTAL_ROWS = 6
 const THIN = { style: 'thin' as const }
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest) {
   }
 
   const addEmptyRow = () => {
-    const er = ws.getRow(r); er.height = 37.5; bd(er); r++; usedRows++
+    const er = ws.getRow(r); er.height = HEIGHT_ROW; bd(er); r++; usedRows++
   }
 
   // 経費はhistory画面から渡された値をそのまま使用
@@ -166,7 +168,7 @@ export async function POST(req: NextRequest) {
         sr.getCell(8).numFmt = NUM_FMT; sr.getCell(8).font = f(10)
       }
 
-      sr.height = 37.5; bd(sr); r++; usedRows++
+      sr.height = HEIGHT_ROW; bd(sr); r++; usedRows++
     })
   }
 
@@ -191,11 +193,11 @@ export async function POST(req: NextRequest) {
   const tRow = ws.getRow(r)
   tRow.getCell(2).value = 'Ⅱ'; tRow.getCell(3).value = '建築工事'
   ;[2,3].forEach(i => tRow.getCell(i).font = f(10))
-  tRow.height = 37.5; bd(tRow); r++
+  tRow.height = HEIGHT_ROW; bd(tRow); r++
   const nRow = ws.getRow(r)
   nRow.getCell(3).value = '（内訳）'; nRow.getCell(3).font = f(10)
-  nRow.height = 37.5; bd(nRow); r++
-  const e1 = ws.getRow(r); e1.height = 37.5; bd(e1); r++
+  nRow.height = HEIGHT_ROW; bd(nRow); r++
+  const e1 = ws.getRow(r); e1.height = HEIGHT_ROW; bd(e1); r++
   sections.forEach((section: any, idx: number) => {
     const sr = ws.getRow(r)
     page1RowNums[idx] = r
@@ -205,17 +207,17 @@ export async function POST(req: NextRequest) {
     sr.getCell(8).value = Math.round(getSectionTotal(section))
     sr.getCell(8).numFmt = NUM_FMT
     ;[2,3,5,6,8].forEach(i => sr.getCell(i).font = f(10))
-    sr.height = 37.5; bd(sr); r++
+    sr.height = HEIGHT_ROW; bd(sr); r++
   })
-  while (r < 13) { const er = ws.getRow(r); er.height = 37.5; bd(er); r++ }
+  while (r < 13) { const er = ws.getRow(r); er.height = HEIGHT_ROW; bd(er); r++ }
   const gtRow = ws.getRow(r)
   const gtRowNum = r
   gtRow.getCell(4).value = 'Ⅱ- 建築工事の計'
   gtRow.getCell(8).value = Math.round(sections.reduce((s: number, sec: any) => s + getSectionTotal(sec), 0))
   gtRow.getCell(8).numFmt = NUM_FMT
   ;[4,8].forEach(i => gtRow.getCell(i).font = f(10))
-  gtRow.height = 37.5; bd(gtRow); r++
-  while (r <= 27) { const er = ws.getRow(r); er.height = 37.5; bd(er); r++ }
+  gtRow.height = HEIGHT_ROW; bd(gtRow); r++
+  while (r <= 27) { const er = ws.getRow(r); er.height = HEIGHT_ROW; bd(er); r++ }
   addPageNum()
 
   // === ページ2以降: 各工事区分明細 ===
@@ -224,7 +226,7 @@ export async function POST(req: NextRequest) {
     const sh = ws.getRow(r)
     sh.getCell(2).value = sIdx + 1; sh.getCell(3).value = section.name
     ;[2,3].forEach(i => sh.getCell(i).font = f(10))
-    sh.height = 37.5; bd(sh); r++; usedRows++
+    sh.height = HEIGHT_ROW; bd(sh); r++; usedRows++
 
     let firstDataRow: number|null = null
     let lastDataRow: number|null = null
@@ -293,7 +295,7 @@ export async function POST(req: NextRequest) {
           // 通常行はL列非表示
         }
       }
-      dr.height = 37.5; bd(dr); r++; usedRows++
+      dr.height = HEIGHT_ROW; bd(dr); r++; usedRows++
     })
     writeSubtotal(section, sIdx, firstDataRow, lastDataRow, nightNRows, firstNightRow, hakobiExcludedTotal)
     addPageNum()
