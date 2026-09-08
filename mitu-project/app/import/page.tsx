@@ -1,35 +1,27 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.3.0
+// バージョン: V1.4.0
 // 更新: 2026/09/08
 // 変更: V1.2.0 feat: buildingsテーブル動的取得・新規ビル名自動追加
 // 変更: V1.3.0 feat: 「元の見積」を選んで紐づけられるようにした。
 //                    選ぶとそのグループの次の版として保存され、履歴の版ボタンで行き来できる。
 //                    過去の版はそのまま残す（しまうのは履歴画面での長押しのみ）。
 //                    ファイル名の件名から候補を自動選択する。選ばなければ従来どおり新規登録。
+// 変更: V1.4.0 fix: 読み取りルールを lib/importExcel.ts に分離し、次の形の見積書も読めるようにした。
+//                    ・工事区分の番号がローマ数字（Ⅰ・Ⅱ・Ⅲ）の見積書
+//                    ・「小　　　計」「計」のように全角スペースが入った小計・計の行
+//                    ・「仮設費」→「仮設工事費」など、経費の名前ゆれを吸収
+//                    合計の突合は、1行ずつ丸める前の金額で行う（1円ズレで取り込めない問題の対策）。
+//                    プレビューの行番号をExcelの行番号と合わせた。
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import { VERSION } from '@/lib/version'
-
-// スキップ行の判定
-const isSectionTotal = (d: string) =>
-  (d || '').includes('の計') || (d || '').includes('建築工事')
-const isSectionTotalRow = (c: string, d: string) =>
-  isSectionTotal(d) || isSectionTotal(c)
-const isPageNum = (note: string) =>
-  /^P\.\s*\d+/.test(note || '')
-const isHeaderRow = (name: string) =>
-  ['名　　　称', '（内訳）', 'Ⅰ', 'Ⅱ'].some(h => (name || '').startsWith(h))
-
-// \n で分割して3段に
-const split3 = (val: string | null | undefined): [string, string, string] => {
-  const parts = (val || '').split('\n').map(s => s.trim()).filter(Boolean)
-  return [parts[0] || '', parts[1] || '', parts[2] || '']
-}
+import { parseSheetRows, buildSectionMatches } from '@/lib/importExcel'
+import type { PreviewRow, SectionMatch, SheetRow } from '@/lib/importExcel'
 
 // ファイル名からメタ情報を取得
 const parseFileName = (name: string) => {
@@ -44,24 +36,6 @@ const parseFileName = (name: string) => {
   const workType = parts[parts.length - 1] || ''
   const title = parts.slice(2, parts.length - 2).join('')
   return { date, building, title, staff, work_type: workType }
-}
-
-type PreviewRow = {
-  rowNum: number
-  work_section: string
-  name1: string; name2: string; name3: string
-  spec1: string; spec2: string; spec3: string
-  quantity: string; unit: string; unit_price: string; amount: number
-  note1: string; note2: string; note3: string
-  warning: boolean
-  warningMsg: string
-}
-
-type SectionMatch = {
-  name: string
-  excelTotal: number
-  calcTotal: number
-  matched: boolean
 }
 
 type HeaderInfo = {
@@ -90,6 +64,7 @@ export default function ImportPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [doneMsg, setDoneMsg] = useState('')
   const [sectionMatches, setSectionMatches] = useState<SectionMatch[]>([])
+  const [excelTotals, setExcelTotals] = useState<Record<string, number>>({})   // Excelに書かれている工事区分ごとの「計」
   const [buildingList, setBuildingList] = useState<string[]>(['新宿FT', '新宿ESS'])
   const [linkTargets, setLinkTargets] = useState<LinkTarget[]>([])
   const [linkId, setLinkId] = useState<number|null>(null)   // null = 紐づけずに新規登録
@@ -151,147 +126,21 @@ export default function ImportPage() {
         n.includes('建築') || n.includes('工事') || n.includes('明細')
       ) || sheetNames[0]
       const ws = wb.Sheets[targetSheet]
-      const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 'A', defval: null })
+      // 空行も読み込む（プレビューの行番号をExcelの行番号と合わせるため）
+      const startRow = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).s.r + 1 : 1
+      const rows = XLSX.utils.sheet_to_json<SheetRow>(ws, { header: 'A', defval: null, blankrows: true })
 
-      const parsed: PreviewRow[] = []
-      const excelTotals: Record<string, number> = {}
-      let currentSection = ''
-      let rowOrder = 0
-      let afterSubtotal = false
-      let page2Started = false
-
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]
-        const b = row['B']
-        const c = String(row['C'] || '').trim()
-        const d = String(row['D'] || '').trim()
-        const e = row['E']
-        const f = String(row['F'] || '').trim()
-        const g = row['G']
-        const h = row['H']
-        const ii = String(row['I'] || '').trim()
-
-        if (isPageNum(ii) && !c) continue
-        if (isHeaderRow(c)) continue
-        if (!c && !d && !e && !g && !h) continue
-
-        const bNum = typeof b === 'number' || (typeof b === 'string' && /^\d+$/.test(b.trim()))
-        if (bNum && c && !e && !g) {
-          page2Started = true
-          currentSection = c
-          rowOrder = 0
-          afterSubtotal = false
-          continue
-        }
-
-        if (!page2Started) continue
-
-        if (isSectionTotalRow(c, d) && currentSection && h !== null) {
-          excelTotals[currentSection] = Math.round(Number(h))
-          continue
-        }
-
-        const isSubtotal = (c === '小計' || d === '小計') && !isSectionTotalRow(c, d)
-        if (isSubtotal && currentSection) {
-          afterSubtotal = true
-          const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
-          rowOrder++
-          parsed.push({
-            rowNum: i + 1,
-            work_section: `経費_${currentSection}`,
-            name1: '小計', name2: '', name3: '',
-            spec1: '', spec2: '', spec3: '',
-            quantity: '1', unit: '式',
-            unit_price: String(amount),
-            amount,
-            note1: '', note2: '', note3: '',
-            warning: false, warningMsg: '',
-          })
-          continue
-        }
-
-        if (afterSubtotal && currentSection && c) {
-          const amount = h !== null && h !== undefined ? Math.round(Number(h)) : 0
-          const unitPrice = g !== null && g !== undefined ? Number(g) : amount
-          const [n1, n2, n3] = split3(c)
-          const [s1, s2, s3] = split3(d)
-          rowOrder++
-          parsed.push({
-            rowNum: i + 1,
-            work_section: `経費_${currentSection}`,
-            name1: n1, name2: n2, name3: n3,
-            spec1: s1, spec2: s2, spec3: s3,
-            quantity: e !== null ? String(Number(e)) : '1',
-            unit: f || '式',
-            unit_price: String(unitPrice),
-            amount,
-            note1: '', note2: '', note3: '',
-            warning: false, warningMsg: '',
-          })
-          continue
-        }
-
-        if (c || d || e !== null || g !== null) {
-          const [n1, n2, n3] = split3(c)
-          const [s1, s2, s3] = split3(d)
-          const [o1, o2, o3] = split3(ii)
-          const qty = e !== null && e !== undefined ? Number(e) : null
-          const price = g !== null && g !== undefined ? Number(g) : null
-          const hVal = h !== null && h !== undefined && !isNaN(Number(h)) ? Number(h) : null
-          const amount = hVal !== null ? Math.round(hVal) : (qty !== null && price !== null ? Math.round(qty * price) : 0)
-
-          const hasContent = d || e !== null || g !== null
-          if (!hasContent) continue
-
-          const warning = !currentSection || qty === null
-          const msgs: string[] = []
-          if (!currentSection) msgs.push('工事区分不明')
-          if (qty === null) msgs.push('数量なし')
-
-          rowOrder++
-          parsed.push({
-            rowNum: i + 1,
-            work_section: currentSection || '不明',
-            name1: n1, name2: n2, name3: n3,
-            spec1: s1, spec2: s2, spec3: s3,
-            quantity: qty !== null ? String(qty) : '',
-            unit: f,
-            unit_price: price !== null ? String(price) : '',
-            amount,
-            note1: o1, note2: o2, note3: o3,
-            warning,
-            warningMsg: msgs.join('・'),
-          })
-        }
-      }
-
-      // 名称引き継ぎ後処理
-      for (let i = 1; i < parsed.length; i++) {
-        const row = parsed[i]
-        if (!row.name1 && (row.spec1 || row.quantity || row.unit_price) && !row.work_section.startsWith('経費_')) {
-          let prevIdx = i - 1
-          while (prevIdx >= 0 && parsed[prevIdx].work_section !== row.work_section) prevIdx--
-          if (prevIdx >= 0) {
-            parsed[i] = { ...row, name1: parsed[prevIdx].name1, name2: parsed[prevIdx].name2, name3: parsed[prevIdx].name3 }
-          }
-        }
-      }
+      const { rows: parsed, excelTotals: totals, sectionFound } = parseSheetRows(rows, startRow)
 
       if (parsed.length === 0) {
-        const bVals = rows.slice(0, 40).map((r: any, i: number) => `行${i+1}:B=${JSON.stringify(r['B'])}C=${JSON.stringify(r['C'])}`).join(' / ')
-        setErrorMsg('明細データが見つかりませんでした。行数:' + rows.length + ' page2Started:' + page2Started + ' ' + bVals)
+        setErrorMsg(sectionFound
+          ? `「${targetSheet}」シートに明細が見つかりませんでした。C列:名称／D列:仕様／E列:数量／F列:単位／G列:単価／H列:金額 の並びになっているか確認してください。`
+          : `「${targetSheet}」シートに工事区分の行が見つかりませんでした。B列に番号（1・2・3…）かローマ数字（Ⅰ・Ⅱ・Ⅲ…）、C列に工事区分名（解体工事など）が入っているか確認してください。`)
         return
       }
 
-      const sections = [...new Set(parsed.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section))]
-      const matches: SectionMatch[] = sections.map(name => {
-        const excelTotal = excelTotals[name] ?? null
-        const detailTotal = parsed.filter(r => r.work_section === name).reduce((sum, r) => sum + r.amount, 0)
-        const expenseTotal = parsed.filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計').reduce((sum, r) => sum + r.amount, 0)
-        const calcTotal = detailTotal + expenseTotal
-        return { name, excelTotal: excelTotal ?? 0, calcTotal, matched: excelTotal !== null && Math.round(excelTotal) === Math.round(calcTotal) }
-      })
-      setSectionMatches(matches)
+      setExcelTotals(totals)
+      setSectionMatches(buildSectionMatches(parsed, totals))
       setPreviewRows(parsed)
       setStep('preview')
     } catch (e: any) {
@@ -305,6 +154,13 @@ export default function ImportPage() {
     if (file) handleFile(file)
   }
 
+  // 行を消したら合計の突合もやり直す
+  const deleteRow = (idx: number) => setPreviewRows(prev => {
+    const next = prev.filter((_, i) => i !== idx)
+    setSectionMatches(buildSectionMatches(next, excelTotals))
+    return next
+  })
+
   const updateRow = (idx: number, field: keyof PreviewRow, value: string) => {
     setPreviewRows(prev => {
       const next = prev.map((r, i) => {
@@ -312,24 +168,15 @@ export default function ImportPage() {
         const updated = { ...r, [field]: value }
         const q = parseFloat(updated.quantity) || 0
         const p = parseFloat(updated.unit_price) || 0
-        updated.amount = Math.round(q * p)
+        updated.rawAmount = q * p
+        updated.amount = Math.round(updated.rawAmount)
         updated.warning = !updated.work_section || !updated.quantity || !updated.unit_price
         return updated
       })
-      const sections = [...new Set(next.filter(r => !r.work_section.startsWith('経費_')).map(r => r.work_section))]
-      const matches = sections.map(name => {
-        const excelTotal = sectionMatches.find(m => m.name === name)?.excelTotal ?? 0
-        const detailTotal = next.filter(r => r.work_section === name).reduce((sum, r) => sum + r.amount, 0)
-        const expenseTotal = next.filter(r => r.work_section === `経費_${name}` && r.name1 !== '小計').reduce((sum, r) => sum + r.amount, 0)
-        const calcTotal = detailTotal + expenseTotal
-        return { name, excelTotal, calcTotal, matched: Math.round(excelTotal) === Math.round(calcTotal) }
-      })
-      setSectionMatches(matches)
+      setSectionMatches(buildSectionMatches(next, excelTotals))
       return next
     })
   }
-
-  const deleteRow = (idx: number) => setPreviewRows(prev => prev.filter((_, i) => i !== idx))
 
   const handleImport = async () => {
     setErrorMsg('')

@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.5.0
+// バージョン: V2.6.0
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
@@ -14,6 +14,9 @@
 //                    スマホは従来どおり長押し。ボタン外へドラッグしたら長押しは取り消す。
 //                    ※データを完全削除する機能は意図的に持たせていない。
 //                      しまった版はいつでも見られて、いつでも元に戻せる。
+// 更新: V2.6.0 fix: 保存boxを開いたときの「全部戻す」ボタンが、右クリック対応(V2.4.0)の
+//                    書き換えのときに消えてしまっていたので戻した。
+//                    しまった版を1つずつ戻さなくても、まとめて元に戻せる。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -114,6 +117,7 @@ export default function HistoryPage() {
   const [showSectionInput, setShowSectionInput] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [showArchived, setShowArchived] = useState(false)   // 保存box（過去の版）を表示するか
+  const [restoringArchived, setRestoringArchived] = useState(false)
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
@@ -178,6 +182,19 @@ export default function HistoryPage() {
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
   }
+  // 保存boxにしまった版をまとめて元に戻す（1つずつ戻す場合は版ボタンの右クリック・長押し）
+  const restoreArchivedVersions = async (baseId: number) => {
+    const targets = estimates.filter(e => (e.base_id || e.id) === baseId && e.is_archived)
+    if (targets.length === 0) return
+    setRestoringArchived(true)
+    const { error } = await supabase.from('estimates').update({ is_archived: false })
+      .in('id', targets.map(e => e.id))
+    setRestoringArchived(false)
+    if (error) { alert('戻すのに失敗しました: ' + error.message); return }
+    setShowArchived(false)
+    await loadEstimates()
+  }
+
   const loadItems = async (estimate: Estimate) => {
     setLoading(true); setSelectedEstimate(estimate)
     const { data } = await supabase.from('estimate_items').select('*')
@@ -1506,6 +1523,13 @@ export default function HistoryPage() {
                       : 'bg-white text-amber-600 border-amber-400 hover:bg-amber-50'}`}
                     title={showArchived ? '保存boxを閉じる' : `保存box（過去の版 ${archivedCount} 件）を開く`}>
                     箱{archivedCount}
+                  </button>
+                )}
+                {showArchived && archivedCount > 0 && (
+                  <button onClick={() => restoreArchivedVersions(baseId)} disabled={restoringArchived}
+                    className="px-2 h-6 rounded text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                    title="保存boxにしまった版をまとめて元に戻します（1つずつ戻すなら版ボタンを右クリック・長押し）">
+                    {restoringArchived ? '戻し中...' : '全部戻す'}
                   </button>
                 )}
                 {shown.map(e => (
