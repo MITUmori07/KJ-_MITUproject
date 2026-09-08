@@ -1,9 +1,13 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/import/
 // ファイル名: page.tsx
-// バージョン: V1.2.0
-// 更新: 2026/05/27
+// バージョン: V1.3.0
+// 更新: 2026/09/08
 // 変更: V1.2.0 feat: buildingsテーブル動的取得・新規ビル名自動追加
+// 変更: V1.3.0 feat: 「元の見積」を選んで紐づけられるようにした。
+//                    選ぶとそのグループの次の版として保存され、履歴の版ボタンで行き来できる。
+//                    版が増えるので、それより前の版は自動で保存boxへ移す。
+//                    ファイル名の件名から候補を自動選択する。選ばなければ従来どおり新規登録。
 // ============================================================
 'use client'
 import { useState, useEffect } from 'react'
@@ -65,6 +69,16 @@ type HeaderInfo = {
   staff: string; work_type: string
 }
 
+// 取り込んだExcelを紐づける先（既存見積のグループ代表＝最新版）
+type LinkTarget = {
+  id: number; base_id: number|null
+  date: string; building: string; title: string
+  staff: string; work_type: string
+  version: string|null; input_by: string|null
+}
+
+const LAST_VERSION_INDEX = 25   // 版文字はA〜Z（Zを超えた分はZ止め）
+
 export default function ImportPage() {
   const [step, setStep] = useState<'upload' | 'preview' | 'done'>('upload')
   const [fileName, setFileName] = useState('')
@@ -77,12 +91,28 @@ export default function ImportPage() {
   const [doneMsg, setDoneMsg] = useState('')
   const [sectionMatches, setSectionMatches] = useState<SectionMatch[]>([])
   const [buildingList, setBuildingList] = useState<string[]>(['新宿FT', '新宿ESS'])
+  const [linkTargets, setLinkTargets] = useState<LinkTarget[]>([])
+  const [linkId, setLinkId] = useState<number|null>(null)   // null = 紐づけずに新規登録
 
-  useEffect(() => { loadBuildings() }, [])
+  useEffect(() => { loadBuildings(); loadLinkTargets() }, [])
 
   const loadBuildings = async () => {
     const { data } = await supabase.from('buildings').select('name').order('sort_order')
     if (data && data.length > 0) setBuildingList(data.map((b: {name: string}) => b.name))
+  }
+
+  // 紐づけ先の候補。同じグループは最新版だけを代表として並べる
+  const loadLinkTargets = async () => {
+    const { data } = await supabase.from('estimates')
+      .select('id,base_id,date,building,title,staff,work_type,version,input_by')
+      .order('date', { ascending: false })
+    const list = (data || []) as LinkTarget[]
+    const latestPerGroup = list.filter(e => {
+      const baseId = e.base_id || e.id
+      const group = list.filter(x => (x.base_id || x.id) === baseId)
+      return e.id === Math.max(...group.map(x => x.id))
+    })
+    setLinkTargets(latestPerGroup)
   }
 
   const ensureBuilding = async (name: string) => {
@@ -96,11 +126,19 @@ export default function ImportPage() {
     }
   }
 
+  // ファイル名の件名から紐づけ先を自動で選ぶ（見つからなければ新規のまま）
+  const autoSelectLink = (title: string) => {
+    if (!title) { setLinkId(null); return }
+    const hit = linkTargets.find(t => t.title === title)
+    setLinkId(hit ? hit.id : null)
+  }
+
   const handleFile = async (file: File) => {
     setErrorMsg('')
     setFileName(file.name)
     const info = parseFileName(file.name)
     setHeaderInfo(info)
+    autoSelectLink(info.title)
 
     // 新しいビル名があれば自動追加
     await ensureBuilding(info.building)
@@ -304,11 +342,24 @@ export default function ImportPage() {
       // ビル名が変更されている場合も自動追加
       await ensureBuilding(headerInfo.building)
 
+      // 元の見積を選んでいれば、そのグループの次の版として保存する
+      const target = linkTargets.find(t => t.id === linkId) || null
+      let version = 'A'
+      let baseId: number|null = null
+      if (target) {
+        baseId = target.base_id || target.id
+        const { data: vData } = await supabase.from('estimates')
+          .select('id').or(`base_id.eq.${baseId},id.eq.${baseId}`)
+        version = String.fromCharCode(65 + Math.min((vData || []).length, LAST_VERSION_INDEX))
+      }
+
       const { data: estData, error: estError } = await supabase
         .from('estimates').insert({
           date: headerInfo.date, building: headerInfo.building,
           title: headerInfo.title, staff: headerInfo.staff,
           work_type: headerInfo.work_type,
+          version, base_id: baseId,
+          input_by: target ? target.input_by : null,
         }).select('id').single()
 
       if (estError || !estData) {
@@ -339,7 +390,19 @@ export default function ImportPage() {
         setImporting(false); return
       }
 
-      setDoneMsg(`取り込み完了！ ${previewRows.length}行を登録しました。`)
+      if (baseId) {
+        // 版が増えたので、それより前の版は保存boxへ（削除ではないので履歴から戻せる）
+        await supabase.from('estimates').update({ is_archived: true })
+          .or(`base_id.eq.${baseId},id.eq.${baseId}`).neq('id', estimateId)
+      } else {
+        // 新規グループは自分自身をグループの起点にする
+        await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
+      }
+      await loadLinkTargets()
+
+      setDoneMsg(target
+        ? `取り込み完了！「${target.title}」の${version}版として${previewRows.length}行を登録しました。以前の版は保存boxへ移しました。`
+        : `取り込み完了！ 新規の見積として${previewRows.length}行を登録しました。`)
       setStep('done')
     } catch (e: any) {
       setErrorMsg('予期しないエラーが発生しました: ' + (e?.message || String(e)))
@@ -434,7 +497,27 @@ export default function ImportPage() {
               {['A工事','B工事','C工事'].map(w => <option key={w} value={w}>{w}</option>)}
             </select>
           </div>
+          <div className="flex flex-col gap-0.5 flex-1 min-w-[220px]">
+            <label className="text-xs text-gray-400">元の見積（選ぶと次の版として保存されます）</label>
+            <select className={`border rounded px-1 py-0.5 text-xs w-full ${linkId ? 'bg-blue-50 border-blue-400' : ''}`}
+              value={linkId ?? ''}
+              onChange={e => setLinkId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">紐づけない（新しい見積として登録）</option>
+              {linkTargets.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.title}／{t.date}／{t.building}／{t.staff}（現在 版{t.version || 'A'}）
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        {linkId
+          ? <div className="mt-1 bg-blue-50 border border-blue-200 rounded px-3 py-1 text-xs text-blue-800">
+              この見積の<b>次の版</b>として保存します。以前の版は<b>保存box</b>へ移り、履歴画面の「箱」ボタンから見られます（データは消えません）。
+            </div>
+          : <div className="mt-1 bg-gray-50 border border-gray-200 rounded px-3 py-1 text-xs text-gray-600">
+              紐づけ先が選ばれていません。このまま取り込むと<b>新しい見積</b>として登録されます。
+            </div>}
         {errorMsg && <div className="mt-1 bg-red-50 border border-red-200 rounded px-3 py-1 text-xs text-red-700">⚠️ {errorMsg}</div>}
       </div>
 
