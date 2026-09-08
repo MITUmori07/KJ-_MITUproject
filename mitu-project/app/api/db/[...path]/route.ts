@@ -1,13 +1,15 @@
 /* ============================================================
 ディレクトリ: mitu-project/app/api/db/[...path]/
 ファイル名: route.ts
-バージョン: V1.0.0
+バージョン: V1.0.1
 更新: V1.0.0 feat: Supabase REST APIのサーバー側プロキシを新規作成
       ブラウザは公開キー(anon)でSupabaseを直接叩かず、必ずこのAPIを経由する。
       このAPIはmiddlewareのログイン認証で保護されており、
       Supabaseへはサーバーだけが持つservice_roleキーで問い合わせる。
       これによりテーブルのRLSをポリシーなしで有効化しても
       アプリは従来どおり動作し、外部からは一切アクセスできなくなる。
+更新: V1.0.1 fix: 環境変数の前後の空白・改行を除去（貼り付け時の混入対策）。
+      鍵が拒否された場合はサーバーログに理由が残るようにした。
 ============================================================ */
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -40,9 +42,10 @@ const deny = (message: string, status: number) =>
   NextResponse.json({ message, code: 'proxy_error' }, { status })
 
 async function proxy(req: NextRequest, path: string[]) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  // 貼り付け時に紛れ込んだ前後の空白・改行を落とす（Invalid API keyの典型原因）
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   // service_roleキーは絶対にNEXT_PUBLIC_を付けないこと（付けるとブラウザに露出する）
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
   if (!supabaseUrl || !serviceKey) {
     console.error('[api/db] SUPABASE_SERVICE_ROLE_KEY または NEXT_PUBLIC_SUPABASE_URL が未設定です')
@@ -78,6 +81,10 @@ async function proxy(req: NextRequest, path: string[]) {
   } catch (e) {
     console.error('[api/db] upstream error:', e)
     return deny('データベースに接続できませんでした', 502)
+  }
+
+  if (upstream.status === 401) {
+    console.error('[api/db] Supabaseが鍵を拒否しました。SUPABASE_SERVICE_ROLE_KEYの値を確認してください')
   }
 
   const resHeaders = new Headers()
