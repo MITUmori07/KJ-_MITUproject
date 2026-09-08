@@ -1,20 +1,23 @@
 /* ============================================================
 ディレクトリ: mitu-project/app/api/keepalive/
 ファイル名: route.ts
-バージョン: V1.1.0
+バージョン: V1.2.0
 更新: V1.0.0 feat: Supabase自動停止防止のヘルスチェックAPI新規作成
       Vercel Cronから毎日1回叩かれ、estimatesを1件SELECTして無操作カウントをリセットする
 更新: V1.1.0 fix: middlewareの認証対象から外したため、CRON_SECRET設定時のみBearer検証を追加
       （CRON_SECRET未設定なら従来どおり動作する）
+更新: V1.2.0 fix: RLS有効化に備え、service_roleキーがあればそちらを使う
+      （未設定ならanonキーで従来どおり動作する）
 ============================================================ */
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
+// RLSを有効にするとanonキーでは行が読めなくなるため、あればservice_roleキーを使う
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
 export async function GET(req: Request) {
