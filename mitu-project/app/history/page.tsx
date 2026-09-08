@@ -7,9 +7,9 @@
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
 //                    ファイル名の版文字を実際に保存した版に合わせる(上書きは元の版のまま) /
 //                    版文字をA〜Zで打ち止め / 撤去済み途中保存の残骸(draft_id・savedMsg)を削除
-// 更新: V2.1.0 feat: 保存box。版が増えたら以前の版は自動で保存boxへ移し、
-//                    版ボタンには最新版だけを並べる。「保存box」ボタンで過去の版を表示でき、
-//                    従来どおり長押しで個別に戻せる（データは消えない）。
+// 更新: V2.1.0 feat: 保存box。版ボタンの長押しでしまった版を隠し、「箱n」ボタンで
+//                    まとめて表示/非表示できるようにした（データは消えない）。
+//                    版は重ねて残すため、自動でしまうことはしない。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -298,12 +298,6 @@ export default function HistoryPage() {
     return String.fromCharCode(65 + Math.min(n, LAST_VERSION_INDEX))
   }
 
-  // 版が増えたら、それより前の版は保存boxへしまう（削除ではないので長押しで戻せる）
-  const archiveOlderVersions = async (baseId: number, keepId: number) => {
-    await supabase.from('estimates').update({ is_archived: true })
-      .or(`base_id.eq.${baseId},id.eq.${baseId}`).neq('id', keepId)
-  }
-
   // 編集中(sections/copyInfo)を新版としてestimatesへ保存。保存したidと版文字を返す
   // 件名がコピー元と違う/新規 → 新グループのA版 / 件名が同じ → 既存グループの次の版
   const saveAsNewVersion = async (): Promise<{ id: number; version: string }|null> => {
@@ -365,8 +359,6 @@ export default function HistoryPage() {
     await supabase.from('estimate_items').insert(expenseRows)
     if (isNewGroup) {
       await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
-    } else if (baseId) {
-      await archiveOlderVersions(baseId, estimateId)
     }
     // 保存後は今作った版をコピー元とみなす。件名を変えずに続けて出力しても
     // 同じ件名のA版が量産されず、同グループの次の版(B・C…)として積み上がる
@@ -402,7 +394,6 @@ export default function HistoryPage() {
       labor_rate: it.labor_rate, night_deep_rate: it.night_deep_rate,
     }))
     await supabase.from('estimate_items').insert(newItems)
-    await archiveOlderVersions(baseId, newId)
     return version
   }
 
@@ -1493,7 +1484,7 @@ export default function HistoryPage() {
             const versions = estimates.filter(e => e.base_id === baseId || e.id === baseId)
             if (versions.length <= 1) return null
             const archivedCount = versions.filter(e => e.is_archived).length
-            // 保存boxを閉じているときは最新（未アーカイブ）＋いま見ている版だけ並べる
+            // 保存boxを閉じているときは、しまっていない版＋いま見ている版だけ並べる
             const shown = showArchived
               ? versions
               : versions.filter(e => !e.is_archived || e.id === selectedEstimate.id)

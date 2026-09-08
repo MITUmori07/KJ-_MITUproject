@@ -6,7 +6,7 @@
 // 変更: V1.2.0 feat: buildingsテーブル動的取得・新規ビル名自動追加
 // 変更: V1.3.0 feat: 「元の見積」を選んで紐づけられるようにした。
 //                    選ぶとそのグループの次の版として保存され、履歴の版ボタンで行き来できる。
-//                    版が増えるので、それより前の版は自動で保存boxへ移す。
+//                    過去の版はそのまま残す（しまうのは履歴画面での長押しのみ）。
 //                    ファイル名の件名から候補を自動選択する。選ばなければ従来どおり新規登録。
 // ============================================================
 'use client'
@@ -390,18 +390,14 @@ export default function ImportPage() {
         setImporting(false); return
       }
 
-      if (baseId) {
-        // 版が増えたので、それより前の版は保存boxへ（削除ではないので履歴から戻せる）
-        await supabase.from('estimates').update({ is_archived: true })
-          .or(`base_id.eq.${baseId},id.eq.${baseId}`).neq('id', estimateId)
-      } else {
+      if (!baseId) {
         // 新規グループは自分自身をグループの起点にする
         await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
       }
       await loadLinkTargets()
 
       setDoneMsg(target
-        ? `取り込み完了！「${target.title}」の${version}版として${previewRows.length}行を登録しました。以前の版は保存boxへ移しました。`
+        ? `取り込み完了！「${target.title}」の${version}版として${previewRows.length}行を登録しました。過去の版も履歴の版ボタンから見られます。`
         : `取り込み完了！ 新規の見積として${previewRows.length}行を登録しました。`)
       setStep('done')
     } catch (e: any) {
@@ -513,7 +509,7 @@ export default function ImportPage() {
         </div>
         {linkId
           ? <div className="mt-1 bg-blue-50 border border-blue-200 rounded px-3 py-1 text-xs text-blue-800">
-              この見積の<b>次の版</b>として保存します。以前の版は<b>保存box</b>へ移り、履歴画面の「箱」ボタンから見られます（データは消えません）。
+              この見積の<b>次の版</b>として保存します。過去の版はそのまま残り、履歴画面の版ボタンで行き来できます。
             </div>
           : <div className="mt-1 bg-gray-50 border border-gray-200 rounded px-3 py-1 text-xs text-gray-600">
               紐づけ先が選ばれていません。このまま取り込むと<b>新しい見積</b>として登録されます。
