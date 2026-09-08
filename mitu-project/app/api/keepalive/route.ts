@@ -1,9 +1,11 @@
 /* ============================================================
 ディレクトリ: mitu-project/app/api/keepalive/
 ファイル名: route.ts
-バージョン: V1.0.0
+バージョン: V1.1.0
 更新: V1.0.0 feat: Supabase自動停止防止のヘルスチェックAPI新規作成
       Vercel Cronから毎日1回叩かれ、estimatesを1件SELECTして無操作カウントをリセットする
+更新: V1.1.0 fix: middlewareの認証対象から外したため、CRON_SECRET設定時のみBearer検証を追加
+      （CRON_SECRET未設定なら従来どおり動作する）
 ============================================================ */
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
@@ -15,7 +17,13 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function GET() {
+export async function GET(req: Request) {
+  // CRON_SECRETをVercelに設定すると、Vercel CronがAuthorization: Bearer <secret>を送る。
+  // 未設定の場合は検証しない（DBを1件SELECTするだけのため実害はない）
+  const cronSecret = process.env.CRON_SECRET
+  if (cronSecret && req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
+  }
   const { error } = await supabase.from('estimates').select('id').limit(1)
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
