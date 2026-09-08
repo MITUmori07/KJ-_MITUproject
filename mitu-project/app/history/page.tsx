@@ -1,9 +1,12 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.0.0
+// バージョン: V2.0.1
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
+// 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
+//                    ファイル名の版文字を実際に保存した版に合わせる(上書きは元の版のまま) /
+//                    版文字をA〜Zで打ち止め / 撤去済み途中保存の残骸(draft_id・savedMsg)を削除
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -14,6 +17,7 @@ const DEFAULT_UNITS = ['m2','m','ヶ所','式','台','本','枚','校','人工']
 const PRESET_SECTIONS = ['解体工事','内装工事','外部仕上工事','塗装工事','植栽工事','躯体工事','特殊仮設工事']
 const FIRST_SECTION = '解体工事'
 const LAST_SECTION = '特殊仮設工事'
+const LAST_VERSION_INDEX = 25   // 版文字はA〜Z（Zを超えた分はZ止め）
 
 const normalizeWorkType = (wt: string) =>
   wt.replace('Ａ', 'A').replace('Ｂ', 'B').replace('Ｃ', 'C')
@@ -67,13 +71,14 @@ type Section = {
 type Filters = { staff: string; building: string; workType: string; year: string }
 type CopyInfo = {
   building: string; staff: string; work_type: string
-  draft_id: number|null; date: string; title: string
+  date: string; title: string
   source_estimate_id: number|null; source_title: string
   originalTotal: number
   baseId: number|null
   currentVersion: string
   existingVersions: string[]
   overwriteId: number|null
+  sourceVersion: string
   input_by: string
 }
 type CopyMode = 'A' | 'B' | 'C'
@@ -101,7 +106,6 @@ export default function HistoryPage() {
   const [customSection, setCustomSection] = useState('')
   const [showSectionInput, setShowSectionInput] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [savedMsg, setSavedMsg] = useState('')
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
@@ -185,11 +189,11 @@ export default function HistoryPage() {
     setSections([{ id: Math.random().toString(36).slice(2), name: FIRST_SECTION, rows: [], keihiOverride: null, unbanOverride: null, nightOverride: null, genbaOverride: null, nightDeepRate: 0 }])
     setCopyInfo({
       building: '新宿FT', staff: '', work_type: 'A工事',
-      draft_id: null, date: '', title: '',
+      date: '', title: '',
       source_estimate_id: null, source_title: '',
       originalTotal: 0,
       baseId: null, currentVersion: 'A', existingVersions: [],
-      overwriteId: null, input_by: '',
+      overwriteId: null, sourceVersion: 'A', input_by: '',
     })
     setCopyMode(null)
     setShowEstimate(true)
@@ -245,14 +249,13 @@ export default function HistoryPage() {
       const { data: vData } = await supabase.from('estimates')
         .select('version').or(`base_id.eq.${baseIdVal},id.eq.${baseIdVal}`).order('version')
       existingVersions = (vData || []).map((v: { version: string|null }) => v.version || 'A').filter(Boolean)
-      currentVersion = String.fromCharCode(65 + existingVersions.length)
+      currentVersion = String.fromCharCode(65 + Math.min(existingVersions.length, LAST_VERSION_INDEX))
       baseId = baseIdVal
     }
     setCopyInfo({
       building: buildingList.includes(selectedEstimate.building) ? selectedEstimate.building : buildingList[0] || '新宿FT',
       staff: selectedEstimate.staff,
       work_type: normalizeWorkType(selectedEstimate.work_type),
-      draft_id: null,
       date: mode === 'A' ? selectedEstimate.date : '',
       title: mode === 'A' ? selectedEstimate.title : '',
       source_estimate_id: mode === 'A' ? selectedEstimate.id : null,
@@ -260,6 +263,7 @@ export default function HistoryPage() {
       originalTotal: 0,
       baseId, currentVersion, existingVersions,
       overwriteId: mode === 'A' ? selectedEstimate.id : null,
+      sourceVersion: mode === 'A' ? (selectedEstimate.version || 'A') : 'A',
       input_by: selectedEstimate.input_by || '',
     })
     setCopying(false); setShowEstimate(true); setTitleEditable(false)
@@ -283,20 +287,20 @@ export default function HistoryPage() {
     }
   }
 
-  // 既存グループの次の版文字を取得
+  // 既存グループの次の版文字を取得（A〜Z）
   const getNextVersion = async (baseId: number): Promise<string> => {
     const { data } = await supabase.from('estimates').select('version').or(`base_id.eq.${baseId},id.eq.${baseId}`)
     const n = (data || []).length
-    return String.fromCharCode(65 + n)
+    return String.fromCharCode(65 + Math.min(n, LAST_VERSION_INDEX))
   }
 
-  // 編集中(sections/copyInfo)を新版としてestimatesへ保存。新estimate idを返す
+  // 編集中(sections/copyInfo)を新版としてestimatesへ保存。保存したidと版文字を返す
   // 件名がコピー元と違う/新規 → 新グループのA版 / 件名が同じ → 既存グループの次の版
-  const saveAsNewVersion = async (): Promise<number|null> => {
+  const saveAsNewVersion = async (): Promise<{ id: number; version: string }|null> => {
     if (!copyInfo) return null
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     const titleChanged = currentTitle !== copyInfo.source_title
-    const isNewGroup = copyInfo.source_estimate_id == null || titleChanged
+    const isNewGroup = copyInfo.baseId == null || titleChanged
     let version = 'A'
     let baseId: number|null = null
     if (!isNewGroup && copyInfo.baseId) {
@@ -352,12 +356,20 @@ export default function HistoryPage() {
     if (isNewGroup) {
       await supabase.from('estimates').update({ base_id: estimateId }).eq('id', estimateId)
     }
-    return estimateId
+    // 保存後は今作った版をコピー元とみなす。件名を変えずに続けて出力しても
+    // 同じ件名のA版が量産されず、同グループの次の版(B・C…)として積み上がる
+    setCopyInfo(prev => prev ? {
+      ...prev,
+      baseId: isNewGroup ? estimateId : prev.baseId,
+      title: currentTitle, source_title: currentTitle,
+      currentVersion: version,
+    } : prev)
+    return { id: estimateId, version }
   }
 
-  // 閲覧中の見積(selectedEstimate/items)を複製して新版として保存
-  const dupHistoryAsNewVersion = async (): Promise<void> => {
-    if (!selectedEstimate) return
+  // 閲覧中の見積(selectedEstimate/items)を複製して新版として保存。保存した版文字を返す
+  const dupHistoryAsNewVersion = async (): Promise<string|null> => {
+    if (!selectedEstimate) return null
     const baseId = selectedEstimate.base_id || selectedEstimate.id
     const version = await getNextVersion(baseId)
     const { data: estData } = await supabase.from('estimates').insert({
@@ -366,7 +378,7 @@ export default function HistoryPage() {
       work_type: selectedEstimate.work_type, input_by: selectedEstimate.input_by,
       version, base_id: baseId,
     }).select('id').single()
-    if (!estData) return
+    if (!estData) return null
     const newId = estData.id
     const newItems = items.map(it => ({
       estimate_id: newId, work_section: it.work_section, row_order: it.row_order,
@@ -378,6 +390,7 @@ export default function HistoryPage() {
       labor_rate: it.labor_rate, night_deep_rate: it.night_deep_rate,
     }))
     await supabase.from('estimate_items').insert(newItems)
+    return version
   }
 
   const handleConfirm = async () => {
@@ -388,10 +401,10 @@ export default function HistoryPage() {
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!confirm(`「${currentTitle}」を確定して見積一覧に保存しますか？`)) return
     setConfirming(true)
-    const newId = await saveAsNewVersion()
+    const saved = await saveAsNewVersion()
     setConfirming(false)
-    if (!newId) return
-    if (confirm('確定しました！\nExcel出力しますか？')) { await handleExport(false) }
+    if (!saved) return
+    if (confirm('確定しました！\nExcel出力しますか？')) { await handleExport(false, saved.version) }
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
@@ -444,7 +457,7 @@ export default function HistoryPage() {
     })
     await supabase.from('estimate_items').insert(expRows)
     setConfirming(false)
-    if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport(false)
+    if (confirm('上書き完了！\nExcel出力しますか？')) await handleExport(false, copyInfo.sourceVersion)
     setSections([]); setCopyInfo(null); setCopyMode(null); setShowEstimate(false)
     await loadEstimates()
   }
@@ -662,14 +675,18 @@ export default function HistoryPage() {
     }))
   }
 
-  const handleExport = async (saveVersion: boolean = true) => {
+  const handleExport = async (saveVersion: boolean = true, versionLabel?: string) => {
     if (!copyInfo) return
     if (copying) { alert('データ読み込み中です'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     if (!currentTitle) { alert('件名を入力してください'); return }
-    if (saveVersion) { await saveAsNewVersion() }
+    let version = versionLabel || copyInfo.currentVersion || 'A'
+    if (saveVersion) {
+      const saved = await saveAsNewVersion()
+      if (saved) version = saved.version
+    }
     const sectionsWithExpenses = sections.map(s => ({
       ...s, keihi: getKeihiCost(s), unban: getHakobiCost(s), night: getNightCost(s),
       genba: getGenbaCost(s), sectionTotal: getSectionTotal(s), nightDeepRate: s.nightDeepRate,
@@ -682,19 +699,23 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${copyInfo.currentVersion || 'A'}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
+    a.download = `${version}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}.xlsx`
     a.click()
     if (saveVersion) await loadEstimates()
   }
 
-  const handleExportList = async (saveVersion: boolean = true) => {
+  const handleExportList = async (saveVersion: boolean = true, versionLabel?: string) => {
     if (!copyInfo) return
     if (copying) { alert('データ読み込み中です'); return }
     if (sections.length === 0 || sections.every(s => s.rows.length === 0)) { alert('明細データがありません'); return }
     if (!copyInfo.date) { alert('日付を入力してください'); return }
     const currentTitle = titleInputRef.current?.value || copyInfo.title
     if (!currentTitle) { alert('件名を入力してください'); return }
-    if (saveVersion) { await saveAsNewVersion() }
+    let version = versionLabel || copyInfo.currentVersion || 'A'
+    if (saveVersion) {
+      const saved = await saveAsNewVersion()
+      if (saved) version = saved.version
+    }
     const sectionsWithExpenses = sections.map(s => ({
       ...s, keihi: getKeihiCost(s), unban: getHakobiCost(s), night: getNightCost(s),
       genba: getGenbaCost(s), sectionTotal: getSectionTotal(s), nightDeepRate: s.nightDeepRate,
@@ -707,7 +728,7 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${copyInfo.currentVersion || 'A'}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}_一覧.xlsx`
+    a.download = `${version}版_${copyInfo.date.replace(/-/g,'')}_${copyInfo.building}_${currentTitle}_${copyInfo.staff}_${copyInfo.work_type}_一覧.xlsx`
     a.click()
     if (saveVersion) await loadEstimates()
   }
@@ -785,6 +806,8 @@ export default function HistoryPage() {
   const handleExportHistory = async () => {
     if (!selectedEstimate) return
     const exportSections = buildHistoryExportSections()
+    // 出力と同時に閲覧中の見積を複製して新版保存し、ファイル名もその新版に合わせる
+    const version = (await dupHistoryAsNewVersion()) || selectedEstimate.version || 'A'
     const res = await fetch('/api/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: selectedEstimate.date, building: selectedEstimate.building, title: selectedEstimate.title, staff: selectedEstimate.staff, work_type: selectedEstimate.work_type, sections: exportSections })
@@ -793,15 +816,16 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}.xlsx`
+    a.download = `${version}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}.xlsx`
     a.click()
-    await dupHistoryAsNewVersion()
     await loadEstimates()
   }
 
   const handleExportListHistory = async () => {
     if (!selectedEstimate) return
     const exportSections = buildHistoryExportSections()
+    // 出力と同時に閲覧中の見積を複製して新版保存し、ファイル名もその新版に合わせる
+    const version = (await dupHistoryAsNewVersion()) || selectedEstimate.version || 'A'
     const res = await fetch('/api/export-list', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date: selectedEstimate.date, building: selectedEstimate.building, title: selectedEstimate.title, staff: selectedEstimate.staff, work_type: selectedEstimate.work_type, sections: exportSections })
@@ -810,9 +834,8 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${selectedEstimate.version || 'A'}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}_一覧.xlsx`
+    a.download = `${version}版_${selectedEstimate.date.replace(/-/g,'')}_${selectedEstimate.building}_${selectedEstimate.title}_${selectedEstimate.staff}_${selectedEstimate.work_type}_一覧.xlsx`
     a.click()
-    await dupHistoryAsNewVersion()
     await loadEstimates()
   }
 
@@ -1082,7 +1105,6 @@ export default function HistoryPage() {
             }
           </span>
           <div className="ml-auto flex gap-2 items-center">
-            {savedMsg && <span className="text-xs text-green-600">{savedMsg}</span>}
             <button onClick={() => setRowHeight(h => h === 'small' ? 'large' : 'small')}
               className="border border-gray-400 rounded px-2 py-1 text-xs bg-white hover:bg-gray-100 font-bold"
               title="行の高さを切り替え">
