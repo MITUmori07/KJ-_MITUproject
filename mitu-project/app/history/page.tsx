@@ -1,12 +1,15 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.0.1
+// バージョン: V2.1.0
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
 //                    ファイル名の版文字を実際に保存した版に合わせる(上書きは元の版のまま) /
 //                    版文字をA〜Zで打ち止め / 撤去済み途中保存の残骸(draft_id・savedMsg)を削除
+// 更新: V2.1.0 feat: 保存box。版ボタンの長押しでしまった版を隠し、「箱n」ボタンで
+//                    まとめて表示/非表示できるようにした（データは消えない）。
+//                    版は重ねて残すため、自動でしまうことはしない。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -106,6 +109,7 @@ export default function HistoryPage() {
   const [customSection, setCustomSection] = useState('')
   const [showSectionInput, setShowSectionInput] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)   // 保存box（過去の版）を表示するか
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
@@ -1479,9 +1483,23 @@ export default function HistoryPage() {
             const baseId = selectedEstimate.base_id || selectedEstimate.id
             const versions = estimates.filter(e => e.base_id === baseId || e.id === baseId)
             if (versions.length <= 1) return null
+            const archivedCount = versions.filter(e => e.is_archived).length
+            // 保存boxを閉じているときは、しまっていない版＋いま見ている版だけ並べる
+            const shown = showArchived
+              ? versions
+              : versions.filter(e => !e.is_archived || e.id === selectedEstimate.id)
             return (
-              <div className="flex gap-1">
-                {versions.map(e => (
+              <div className="flex gap-1 items-center">
+                {archivedCount > 0 && (
+                  <button onClick={() => setShowArchived(v => !v)}
+                    className={`px-2 h-6 rounded text-xs font-bold border ${showArchived
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-white text-amber-600 border-amber-400 hover:bg-amber-50'}`}
+                    title={showArchived ? '保存boxを閉じる' : `保存box（過去の版 ${archivedCount} 件）を開く`}>
+                    箱{archivedCount}
+                  </button>
+                )}
+                {shown.map(e => (
                   <button key={e.id}
                     onClick={() => { if (!longPressTriggered.current) loadItems(e) }}
                     onMouseDown={() => startLongPress(e)}
