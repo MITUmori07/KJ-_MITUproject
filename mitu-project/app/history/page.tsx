@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.1.0
+// バージョン: V2.5.0
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
@@ -10,6 +10,10 @@
 // 更新: V2.1.0 feat: 保存box。版ボタンの長押しでしまった版を隠し、「箱n」ボタンで
 //                    まとめて表示/非表示できるようにした（データは消えない）。
 //                    版は重ねて残すため、自動でしまうことはしない。
+// 更新: V2.2.0 feat: 版ボタンの右クリックでも保存boxへ出し入れできるようにした（PC向け）。
+//                    スマホは従来どおり長押し。ボタン外へドラッグしたら長押しは取り消す。
+//                    ※データを完全削除する機能は意図的に持たせていない。
+//                      しまった版はいつでも見られて、いつでも元に戻せる。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -137,12 +141,17 @@ export default function HistoryPage() {
     })
   }
 
+  // 保存boxへ出し入れする。PCは右クリック、スマホは長押しから呼ばれる
+  const toggleArchived = async (e: Estimate) => {
+    await supabase.from('estimates').update({ is_archived: !e.is_archived }).eq('id', e.id)
+    await loadEstimates()
+  }
+
   const startLongPress = (e: Estimate) => {
     longPressTriggered.current = false
     longPressTimer.current = setTimeout(async () => {
       longPressTriggered.current = true
-      await supabase.from('estimates').update({ is_archived: !e.is_archived }).eq('id', e.id)
-      await loadEstimates()
+      await toggleArchived(e)
     }, 600)
   }
   const cancelLongPress = () => {
@@ -1502,8 +1511,10 @@ export default function HistoryPage() {
                 {shown.map(e => (
                   <button key={e.id}
                     onClick={() => { if (!longPressTriggered.current) loadItems(e) }}
+                    onContextMenu={(ev) => { ev.preventDefault(); cancelLongPress(); toggleArchived(e) }}
                     onMouseDown={() => startLongPress(e)}
                     onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
                     onTouchStart={(ev) => { ev.preventDefault(); startLongPress(e) }}
                     onTouchEnd={cancelLongPress}
                     onTouchMove={cancelLongPress}
@@ -1514,7 +1525,9 @@ export default function HistoryPage() {
                           ? 'bg-blue-600 text-white'
                           : 'bg-white border border-blue-300 text-blue-600 hover:bg-blue-50'
                     }`}
-                    title={e.is_archived ? `不要（長押しで復活）版${e.version || 'A'}: ${e.date}` : `版${e.version || 'A'}: ${e.date}（長押しで不要マーク）`}>
+                    title={e.is_archived
+                      ? `版${e.version || 'A'}: ${e.date}（保存box内）\nクリックで表示／右クリック・長押しで元に戻す`
+                      : `版${e.version || 'A'}: ${e.date}\nクリックで表示／右クリック・長押しで保存boxへ`}>
                     {e.version || 'A'}
                   </button>
                 ))}
