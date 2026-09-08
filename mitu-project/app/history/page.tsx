@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.4.0
+// バージョン: V2.5.0
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
@@ -10,11 +10,10 @@
 // 更新: V2.1.0 feat: 保存box。版ボタンの長押しでしまった版を隠し、「箱n」ボタンで
 //                    まとめて表示/非表示できるようにした（データは消えない）。
 //                    版は重ねて残すため、自動でしまうことはしない。
-// 更新: V2.2.0 feat: 保存boxを開いているとき「箱を空に」で、しまった版を明細ごと完全削除できる。
-//                    グループの最新版は対象外にして、見積そのものが消えないようにしている。
-// 更新: V2.3.0 feat: 「箱を空に」で削除した版は復元できないため、削除の確認文言を強めた。
-// 更新: V2.4.0 feat: 版ボタンの右クリックでも保存boxへ出し入れできるようにした（PC向け）。
+// 更新: V2.2.0 feat: 版ボタンの右クリックでも保存boxへ出し入れできるようにした（PC向け）。
 //                    スマホは従来どおり長押し。ボタン外へドラッグしたら長押しは取り消す。
+//                    ※データを完全削除する機能は意図的に持たせていない。
+//                      しまった版はいつでも見られて、いつでも元に戻せる。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -115,7 +114,6 @@ export default function HistoryPage() {
   const [showSectionInput, setShowSectionInput] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [showArchived, setShowArchived] = useState(false)   // 保存box（過去の版）を表示するか
-  const [deletingArchived, setDeletingArchived] = useState(false)
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
@@ -180,29 +178,6 @@ export default function HistoryPage() {
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
   }
-  // 保存boxにしまった版を、明細ごと完全に削除する。
-  // グループの最新版は対象から外す（見積そのものが一覧から消えてしまうため）。
-  const deleteArchivedVersions = async (baseId: number) => {
-    const group = estimates.filter(e => (e.base_id || e.id) === baseId)
-    const newestId = Math.max(...group.map(e => e.id))
-    const targets = group.filter(e => e.is_archived && e.id !== newestId)
-    if (targets.length === 0) { alert('削除できる版がありません（最新版は削除できません）'); return }
-    const labels = targets.map(e => `・版${e.version || 'A'}（${e.date}）`).join('\n')
-    if (!confirm(`保存boxの中の${targets.length}件を完全に削除します。\n\n${labels}\n\n明細データも一緒に消えます。\n削除した版は二度と表示できず、戻すこともできません。\n\n見返す可能性が少しでもあるなら、削除せず保存boxに入れたままにしてください。\n\n本当に削除しますか？`)) return
-
-    setDeletingArchived(true)
-    const ids = targets.map(e => e.id)
-    // 明細を先に消す（見積だけ消すと明細が孤児として残るため）
-    const { error: itemsError } = await supabase.from('estimate_items').delete().in('estimate_id', ids)
-    if (itemsError) { alert('明細の削除に失敗しました: ' + itemsError.message); setDeletingArchived(false); return }
-    const { error: estError } = await supabase.from('estimates').delete().in('id', ids)
-    if (estError) { alert('見積の削除に失敗しました: ' + estError.message); setDeletingArchived(false); return }
-    setDeletingArchived(false)
-    setShowArchived(false)
-    alert(`${targets.length}件を削除しました。`)
-    await loadEstimates()
-  }
-
   const loadItems = async (estimate: Estimate) => {
     setLoading(true); setSelectedEstimate(estimate)
     const { data } = await supabase.from('estimate_items').select('*')
@@ -1531,13 +1506,6 @@ export default function HistoryPage() {
                       : 'bg-white text-amber-600 border-amber-400 hover:bg-amber-50'}`}
                     title={showArchived ? '保存boxを閉じる' : `保存box（過去の版 ${archivedCount} 件）を開く`}>
                     箱{archivedCount}
-                  </button>
-                )}
-                {showArchived && archivedCount > 0 && (
-                  <button onClick={() => deleteArchivedVersions(baseId)} disabled={deletingArchived}
-                    className="px-2 h-6 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-                    title="保存boxにしまった版を明細ごと完全に削除します（最新版は残ります・元に戻せません）">
-                    {deletingArchived ? '削除中...' : '箱を空に'}
                   </button>
                 )}
                 {shown.map(e => (
