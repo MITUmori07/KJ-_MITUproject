@@ -1,10 +1,14 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/api/export/
 // ファイル名: route.ts
-// バージョン: V6.1.5
+// バージョン: V6.2.0
 // 更新: 2026/09/08
 // 変更: V6.1.3 fix: N列=H×L数式・P列deepRate・現場経費/総計H数式
 // 変更: V6.1.5 chore: 明細・小計・空行の行の高さを37.5→40.0（定数HEIGHT_ROWに集約）
+// 変更: V6.2.0 feat: 明細の金額(H列)を「数量×単価」の計算式に変更。
+//                    アプリと同じ二段階の丸め(0.1円→1円)を再現するため表示金額は変わらない。
+//                    数量・単価のどちらかが空の行は従来どおり金額をそのまま入れる。
+//                    搬入除外計(M列)もH列参照にして、Excel上で数量を直すと経費まで再計算される。
 // ============================================================
 
 export const runtime = 'nodejs'
@@ -257,11 +261,19 @@ export async function POST(req: NextRequest) {
       const unitPrice = parseFloat(row.unit_price)||null
       dr.getCell(7).value = unitPrice; dr.getCell(7).font = f(10)
       if (unitPrice !== null) dr.getCell(7).numFmt = NUM_FMT
-      dr.getCell(8).value = Math.round(row.amount || 0)
+      // 金額 = 数量(E) × 単価(G)。アプリ側は Math.round(数量*単価*10)/10 で0.1円に丸めた後
+      // 出力時に1円へ丸めているため、同じ二段階の丸めを式で再現する（金額は変わらない）。
+      // 数量・単価が空の行は計算できないので、従来どおり金額の値をそのまま入れる。
+      dr.getCell(8).value = (qty !== null && unitPrice !== null)
+        ? { formula: `ROUND(ROUND(E${r}*G${r}*10,0)/10,0)` }
+        : Math.round(row.amount || 0)
       dr.getCell(8).font = f(10)
       dr.getCell(8).numFmt = NUM_FMT
       dr.getCell(9).value = note; dr.getCell(9).alignment = { wrapText: true, vertical: 'bottom' }; dr.getCell(9).font = f(9)
-      dr.getCell(13).value = row.excludeHakobi ? 0 : Math.round(row.amount || 0)
+      // 搬入除外計もH列を参照し、Excel上で数量・単価を直したら運搬費まで追従させる
+      dr.getCell(13).value = row.excludeHakobi
+        ? 0
+        : ((qty !== null && unitPrice !== null) ? { formula: `H${r}` } : Math.round(row.amount || 0))
       dr.getCell(13).numFmt = NUM_FMT
       dr.getCell(13).font = { name: FONT, size: 8, color: { argb: 'FF0066CC' } }
       // 印刷範囲外（J〜N列）
