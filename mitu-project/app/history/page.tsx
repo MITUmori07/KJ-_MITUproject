@@ -1,7 +1,7 @@
 // ============================================================
 // ディレクトリ: mitu-project/app/history/
 // ファイル名: page.tsx
-// バージョン: V2.3.0
+// バージョン: V2.4.0
 // 更新: V2.0.0 feat: 入力者(input_by)追加 / 版ルール変更(件名同じ→必ず新版・件名変更→新件名A版) /
 //                    保存(下書き)撤去(draftsテーブルは残す) / Excel・一覧出力時に新版保存(共通関数saveAsNewVersion)
 // 更新: V2.0.1 fix: 出力を繰り返しても同じ件名でA版が量産されないよう保存後は同グループの次の版(B・C…)に継続 /
@@ -12,9 +12,9 @@
 //                    版は重ねて残すため、自動でしまうことはしない。
 // 更新: V2.2.0 feat: 保存boxを開いているとき「箱を空に」で、しまった版を明細ごと完全削除できる。
 //                    グループの最新版は対象外にして、見積そのものが消えないようにしている。
-// 更新: V2.3.0 feat: 保存boxを開いているとき「全部戻す」で、しまった版をまとめて元に戻せる。
-//                    個別に戻したい場合は従来どおり版ボタンの長押し。
-//                    ※「箱を空に」で削除した版は復元できないため、削除の確認文言を強めた。
+// 更新: V2.3.0 feat: 「箱を空に」で削除した版は復元できないため、削除の確認文言を強めた。
+// 更新: V2.4.0 feat: 版ボタンの右クリックでも保存boxへ出し入れできるようにした（PC向け）。
+//                    スマホは従来どおり長押し。ボタン外へドラッグしたら長押しは取り消す。
 // ============================================================
 'use client'
 import { useState, useEffect, useRef } from 'react'
@@ -116,7 +116,6 @@ export default function HistoryPage() {
   const [confirming, setConfirming] = useState(false)
   const [showArchived, setShowArchived] = useState(false)   // 保存box（過去の版）を表示するか
   const [deletingArchived, setDeletingArchived] = useState(false)
-  const [restoringArchived, setRestoringArchived] = useState(false)
   const [showApplyModal, setShowApplyModal] = useState(false)
   const [pendingApply, setPendingApply] = useState<{ newData: Partial<Row>; sectionId: string; rowId: string }|null>(null)
   const [units, setUnits] = useState<string[]>(DEFAULT_UNITS)
@@ -144,12 +143,17 @@ export default function HistoryPage() {
     })
   }
 
+  // 保存boxへ出し入れする。PCは右クリック、スマホは長押しから呼ばれる
+  const toggleArchived = async (e: Estimate) => {
+    await supabase.from('estimates').update({ is_archived: !e.is_archived }).eq('id', e.id)
+    await loadEstimates()
+  }
+
   const startLongPress = (e: Estimate) => {
     longPressTriggered.current = false
     longPressTimer.current = setTimeout(async () => {
       longPressTriggered.current = true
-      await supabase.from('estimates').update({ is_archived: !e.is_archived }).eq('id', e.id)
-      await loadEstimates()
+      await toggleArchived(e)
     }, 600)
   }
   const cancelLongPress = () => {
@@ -176,19 +180,6 @@ export default function HistoryPage() {
     setEstimates(list)
     if (list.length > 0) loadItems(list[0])
   }
-  // 保存boxにしまった版をまとめて元に戻す（個別に戻す場合は版ボタンの長押し）
-  const restoreArchivedVersions = async (baseId: number) => {
-    const targets = estimates.filter(e => (e.base_id || e.id) === baseId && e.is_archived)
-    if (targets.length === 0) return
-    setRestoringArchived(true)
-    const { error } = await supabase.from('estimates').update({ is_archived: false })
-      .in('id', targets.map(e => e.id))
-    setRestoringArchived(false)
-    if (error) { alert('戻すのに失敗しました: ' + error.message); return }
-    setShowArchived(false)
-    await loadEstimates()
-  }
-
   // 保存boxにしまった版を、明細ごと完全に削除する。
   // グループの最新版は対象から外す（見積そのものが一覧から消えてしまうため）。
   const deleteArchivedVersions = async (baseId: number) => {
@@ -1543,13 +1534,6 @@ export default function HistoryPage() {
                   </button>
                 )}
                 {showArchived && archivedCount > 0 && (
-                  <button onClick={() => restoreArchivedVersions(baseId)} disabled={restoringArchived}
-                    className="px-2 h-6 rounded text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                    title="保存boxにしまった版をまとめて元に戻します（個別に戻すなら版ボタンを長押し）">
-                    {restoringArchived ? '戻し中...' : '全部戻す'}
-                  </button>
-                )}
-                {showArchived && archivedCount > 0 && (
                   <button onClick={() => deleteArchivedVersions(baseId)} disabled={deletingArchived}
                     className="px-2 h-6 rounded text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                     title="保存boxにしまった版を明細ごと完全に削除します（最新版は残ります・元に戻せません）">
@@ -1559,8 +1543,10 @@ export default function HistoryPage() {
                 {shown.map(e => (
                   <button key={e.id}
                     onClick={() => { if (!longPressTriggered.current) loadItems(e) }}
+                    onContextMenu={(ev) => { ev.preventDefault(); cancelLongPress(); toggleArchived(e) }}
                     onMouseDown={() => startLongPress(e)}
                     onMouseUp={cancelLongPress}
+                    onMouseLeave={cancelLongPress}
                     onTouchStart={(ev) => { ev.preventDefault(); startLongPress(e) }}
                     onTouchEnd={cancelLongPress}
                     onTouchMove={cancelLongPress}
@@ -1571,7 +1557,9 @@ export default function HistoryPage() {
                           ? 'bg-blue-600 text-white'
                           : 'bg-white border border-blue-300 text-blue-600 hover:bg-blue-50'
                     }`}
-                    title={e.is_archived ? `不要（長押しで復活）版${e.version || 'A'}: ${e.date}` : `版${e.version || 'A'}: ${e.date}（長押しで不要マーク）`}>
+                    title={e.is_archived
+                      ? `版${e.version || 'A'}: ${e.date}（保存box内）\nクリックで表示／右クリック・長押しで元に戻す`
+                      : `版${e.version || 'A'}: ${e.date}\nクリックで表示／右クリック・長押しで保存boxへ`}>
                     {e.version || 'A'}
                   </button>
                 ))}
